@@ -4,15 +4,18 @@ import { parse as parseYaml } from 'yaml'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import type { EventBus } from '../events/index.ts'
+import type { SkillsLoader } from '../skills/index.ts'
 import { AgentRuntime } from './runtime.ts'
 import type { AgentConfig, ManagedAgent } from './types.ts'
 
 export class AgentManager {
   private agents: Map<string, ManagedAgent> = new Map()
   private eventBus: EventBus
+  private skillsLoader: SkillsLoader | null
 
-  constructor(eventBus: EventBus) {
+  constructor(eventBus: EventBus, skillsLoader?: SkillsLoader) {
     this.eventBus = eventBus
+    this.skillsLoader = skillsLoader ?? null
   }
 
   /**
@@ -58,7 +61,7 @@ export class AgentManager {
           skills: Array.isArray(parsed.skills) ? (parsed.skills as unknown[]).map(String) : undefined,
         }
 
-        const systemPrompt = this.buildSystemPrompt(agentDir)
+        const systemPrompt = this.buildSystemPrompt(agentDir, config)
         const runtime = new AgentRuntime(config, this.eventBus, systemPrompt)
 
         this.agents.set(config.id, {
@@ -142,9 +145,9 @@ export class AgentManager {
 
   /**
    * 构建 agent 的系统提示词
-   * 读取 prompts/system.md + prompts/env.md
+   * 读取 prompts/system.md + prompts/env.md + 合格 skills 内容
    */
-  private buildSystemPrompt(_agentDir: string): string {
+  private buildSystemPrompt(_agentDir: string, agentConfig?: AgentConfig): string {
     const promptsDir = getPaths().prompts
     let prompt = ''
 
@@ -164,6 +167,19 @@ export class AgentManager {
         .replace('{{platform}}', process.arch)
         .replace('{{cwd}}', process.cwd())
       prompt += '\n\n' + envPrompt
+    }
+
+    // 注入合格 skills 的内容
+    if (this.skillsLoader && agentConfig) {
+      const skills = this.skillsLoader.loadSkillsForAgent(agentConfig)
+      const eligibleSkills = skills.filter((s) => s.eligible)
+
+      if (eligibleSkills.length > 0) {
+        prompt += '\n\n## Skills\n'
+        for (const skill of eligibleSkills) {
+          prompt += `\n### ${skill.name}\n${skill.content}\n`
+        }
+      }
     }
 
     return prompt

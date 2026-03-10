@@ -4,16 +4,22 @@ import { EventBus } from '../events/bus.ts'
 import { saveMessage, upsertChat } from '../db/index.ts'
 import { randomUUID } from 'node:crypto'
 import { getLogger } from '../logger/index.ts'
+import type { MemoryManager } from '../memory/index.ts'
 import type { InboundMessage, Channel } from './types.ts'
 
 export class MessageRouter {
   private channels: Channel[] = []
+  private memoryManager: MemoryManager | null = null
 
   constructor(
     private agentManager: AgentManager,
     private agentQueue: AgentQueue,
     private eventBus: EventBus,
+    memoryManager?: MemoryManager,
   ) {
+    if (memoryManager) {
+      this.memoryManager = memoryManager
+    }
     // 订阅 complete 事件，自动发送回复到对应 channel
     this.eventBus.subscribe({ types: ['complete'] }, (event) => {
       if (event.type === 'complete') {
@@ -77,6 +83,15 @@ export class MessageRouter {
         isFromMe: true,
         isBotMessage: true,
       })
+
+      // 记录到每日日志
+      if (this.memoryManager) {
+        try {
+          this.memoryManager.appendDailyLog(config.id, message.chatId, message.content, reply)
+        } catch (logErr) {
+          getLogger().error({ error: logErr, agentId: config.id }, '记录每日日志失败')
+        }
+      }
     } catch (err) {
       logger.error({ error: err, chatId: message.chatId }, '消息处理失败')
     }

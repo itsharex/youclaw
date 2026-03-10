@@ -5,10 +5,10 @@ import { cn } from '../../lib/utils'
 const navItems = [
   { to: '/', icon: MessageSquare, label: 'Chat' },
   { to: '/agents', icon: Bot, label: 'Agents' },
-  { to: '/tasks', icon: CalendarClock, label: 'Tasks', disabled: true },
-  { to: '/memory', icon: Brain, label: 'Memory', disabled: true },
-  { to: '/skills', icon: Puzzle, label: 'Skills', disabled: true },
-  { to: '/system', icon: Settings, label: 'System', disabled: true },
+  { to: '/tasks', icon: CalendarClock, label: 'Tasks' },
+  { to: '/memory', icon: Brain, label: 'Memory' },
+  { to: '/skills', icon: Puzzle, label: 'Skills' },
+  { to: '/system', icon: Settings, label: 'System' },
 ]
 
 export function Sidebar() {

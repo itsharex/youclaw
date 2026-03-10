@@ -2,7 +2,10 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Shell } from './components/layout/Shell'
 import { Chat } from './pages/Chat'
 import { Agents } from './pages/Agents'
-import { Placeholder } from './pages/Placeholder'
+import { Skills } from './pages/Skills'
+import { Memory } from './pages/Memory'
+import { Tasks } from './pages/Tasks'
+import { System } from './pages/System'
 
 export default function App() {
   return (
@@ -11,10 +14,10 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Chat />} />
           <Route path="/agents" element={<Agents />} />
-          <Route path="/tasks" element={<Placeholder title="Tasks" />} />
-          <Route path="/memory" element={<Placeholder title="Memory" />} />
-          <Route path="/skills" element={<Placeholder title="Skills" />} />
-          <Route path="/system" element={<Placeholder title="System" />} />
+          <Route path="/tasks" element={<Tasks />} />
+          <Route path="/memory" element={<Memory />} />
+          <Route path="/skills" element={<Skills />} />
+          <Route path="/system" element={<System />} />
         </Routes>
       </Shell>
     </BrowserRouter>

@@ -41,6 +41,31 @@ CREATE TABLE IF NOT EXISTS kv_state (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS scheduled_tasks (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  schedule_type TEXT NOT NULL,
+  schedule_value TEXT NOT NULL,
+  next_run TEXT,
+  last_run TEXT,
+  status TEXT DEFAULT 'active',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_run_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  run_at TEXT NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  result TEXT,
+  error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_runs ON task_run_logs(task_id, run_at);
 `
 
 export function initDatabase(): Database {
@@ -133,4 +158,117 @@ export function saveSession(agentId: string, chatId: string, sessionId: string) 
     `INSERT OR REPLACE INTO sessions (agent_id, chat_id, session_id) VALUES (?, ?, ?)`,
     [agentId, chatId, sessionId]
   )
+}
+
+// ===== 定时任务操作 =====
+
+export interface ScheduledTask {
+  id: string
+  agent_id: string
+  chat_id: string
+  prompt: string
+  schedule_type: string
+  schedule_value: string
+  next_run: string | null
+  last_run: string | null
+  status: string
+  created_at: string
+}
+
+export interface TaskRunLog {
+  id: number
+  task_id: string
+  run_at: string
+  duration_ms: number
+  status: string
+  result: string | null
+  error: string | null
+}
+
+export function createTask(task: {
+  id: string
+  agentId: string
+  chatId: string
+  prompt: string
+  scheduleType: string
+  scheduleValue: string
+  nextRun: string
+}): void {
+  const db = getDatabase()
+  db.run(
+    `INSERT INTO scheduled_tasks (id, agent_id, chat_id, prompt, schedule_type, schedule_value, next_run, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [task.id, task.agentId, task.chatId, task.prompt, task.scheduleType, task.scheduleValue, task.nextRun, new Date().toISOString()]
+  )
+}
+
+export function getTasks(): ScheduledTask[] {
+  const db = getDatabase()
+  return db.query('SELECT * FROM scheduled_tasks ORDER BY created_at DESC').all() as ScheduledTask[]
+}
+
+export function getTask(id: string): ScheduledTask | null {
+  const db = getDatabase()
+  return (db.query('SELECT * FROM scheduled_tasks WHERE id = ?').get(id) as ScheduledTask | null) ?? null
+}
+
+export function updateTask(id: string, updates: Partial<{
+  prompt: string
+  scheduleValue: string
+  status: string
+  nextRun: string | null
+  lastRun: string
+}>): void {
+  const db = getDatabase()
+  const fields: string[] = []
+  const values: (string | number | null)[] = []
+
+  if (updates.prompt !== undefined) { fields.push('prompt = ?'); values.push(updates.prompt) }
+  if (updates.scheduleValue !== undefined) { fields.push('schedule_value = ?'); values.push(updates.scheduleValue) }
+  if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status) }
+  if (updates.nextRun !== undefined) { fields.push('next_run = ?'); values.push(updates.nextRun) }
+  if (updates.lastRun !== undefined) { fields.push('last_run = ?'); values.push(updates.lastRun) }
+
+  if (fields.length === 0) return
+
+  values.push(id)
+  db.run(`UPDATE scheduled_tasks SET ${fields.join(', ')} WHERE id = ?`, values)
+}
+
+export function deleteTask(id: string): void {
+  const db = getDatabase()
+  db.run('DELETE FROM scheduled_tasks WHERE id = ?', [id])
+  db.run('DELETE FROM task_run_logs WHERE task_id = ?', [id])
+}
+
+export function getTasksDueBy(time: string): ScheduledTask[] {
+  const db = getDatabase()
+  return db.query(
+    `SELECT * FROM scheduled_tasks WHERE status = 'active' AND next_run IS NOT NULL AND next_run <= ?`
+  ).all(time) as ScheduledTask[]
+}
+
+// ===== 运行日志 =====
+
+export function saveTaskRunLog(log: {
+  taskId: string
+  runAt: string
+  durationMs: number
+  status: string
+  result?: string
+  error?: string
+}): void {
+  const db = getDatabase()
+  db.run(
+    `INSERT INTO task_run_logs (task_id, run_at, duration_ms, status, result, error)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [log.taskId, log.runAt, log.durationMs, log.status, log.result ?? null, log.error ?? null]
+  )
+}
+
+export function getTaskRunLogs(taskId: string, limit = 50): TaskRunLog[] {
+  const db = getDatabase()
+  return db.query(
+    'SELECT * FROM task_run_logs WHERE task_id = ? ORDER BY run_at DESC LIMIT ?'
+  ).all(taskId, limit) as TaskRunLog[]
 }

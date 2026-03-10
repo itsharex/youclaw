@@ -31,3 +31,124 @@ export async function getMessages(chatId: string) {
 export async function getAgents() {
   return apiFetch<Array<{ id: string; name: string; workspaceDir: string; status: string; hasConfig: boolean }>>('/api/agents')
 }
+
+// Memory API
+
+// 获取 agent 的 MEMORY.md 内容
+export async function getMemory(agentId: string) {
+  return apiFetch<{ content: string }>(`/api/agents/${agentId}/memory`)
+}
+
+// 更新 agent 的 MEMORY.md
+export async function updateMemory(agentId: string, content: string) {
+  return apiFetch<{ ok: boolean }>(`/api/agents/${agentId}/memory`, {
+    method: 'PUT',
+    body: JSON.stringify({ content }),
+  })
+}
+
+// 获取每日日志列表
+export async function getMemoryLogs(agentId: string) {
+  return apiFetch<string[]>(`/api/agents/${agentId}/memory/logs`)
+}
+
+// 获取某天的日志内容
+export async function getMemoryLog(agentId: string, date: string) {
+  return apiFetch<{ content: string }>(`/api/agents/${agentId}/memory/logs/${date}`)
+}
+
+// Skills 相关类型
+export interface SkillFrontmatter {
+  name: string
+  description: string
+  version?: string
+  os?: string[]
+  dependencies?: string[]
+  env?: string[]
+  tools?: string[]
+}
+
+export interface Skill {
+  name: string
+  source: 'workspace' | 'project' | 'user'
+  frontmatter: SkillFrontmatter
+  content: string
+  path: string
+  eligible: boolean
+  eligibilityErrors: string[]
+}
+
+// 获取所有可用 skills
+export async function getSkills() {
+  return apiFetch<Skill[]>('/api/skills')
+}
+
+// 获取 agent 启用的 skills
+export async function getAgentSkills(agentId: string) {
+  return apiFetch<Skill[]>(`/api/agents/${encodeURIComponent(agentId)}/skills`)
+}
+
+// ===== 定时任务 API =====
+
+export interface ScheduledTaskDTO {
+  id: string
+  agent_id: string
+  chat_id: string
+  prompt: string
+  schedule_type: string
+  schedule_value: string
+  next_run: string | null
+  last_run: string | null
+  status: string
+  created_at: string
+}
+
+export interface TaskRunLogDTO {
+  id: number
+  task_id: string
+  run_at: string
+  duration_ms: number
+  status: string
+  result: string | null
+  error: string | null
+}
+
+export async function getTaskList() {
+  return apiFetch<ScheduledTaskDTO[]>('/api/tasks')
+}
+
+export async function createScheduledTask(data: {
+  agentId: string
+  chatId: string
+  prompt: string
+  scheduleType: string
+  scheduleValue: string
+}) {
+  return apiFetch<ScheduledTaskDTO>('/api/tasks', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function updateScheduledTask(id: string, data: Partial<{ prompt: string; scheduleValue: string; status: string }>) {
+  return apiFetch<ScheduledTaskDTO>(`/api/tasks/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function deleteScheduledTask(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/tasks/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function runScheduledTask(id: string) {
+  return apiFetch<{ status: string; result?: string; error?: string }>(`/api/tasks/${id}/run`, {
+    method: 'POST',
+  })
+}
+
+export async function getScheduledTaskLogs(id: string) {
+  return apiFetch<TaskRunLogDTO[]>(`/api/tasks/${id}/logs`)
+}
