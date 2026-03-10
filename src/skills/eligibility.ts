@@ -1,8 +1,9 @@
-import type { SkillFrontmatter } from './types.ts'
+import type { SkillFrontmatter, EligibilityDetail, DependencyCheckResult, EnvCheckResult } from './types.ts'
 
 export interface EligibilityResult {
   eligible: boolean
   errors: string[]
+  detail: EligibilityDetail
 }
 
 /**
@@ -15,33 +16,46 @@ export function checkEligibility(frontmatter: SkillFrontmatter): EligibilityResu
   const errors: string[] = []
 
   // 检查 OS
-  if (frontmatter.os && frontmatter.os.length > 0) {
-    if (!frontmatter.os.includes(process.platform)) {
-      errors.push(`OS 不匹配: 需要 [${frontmatter.os.join(', ')}]，当前为 ${process.platform}`)
-    }
+  const osPassed = !frontmatter.os || frontmatter.os.length === 0 || frontmatter.os.includes(process.platform)
+  if (!osPassed) {
+    errors.push(`OS 不匹配: 需要 [${frontmatter.os!.join(', ')}]，当前为 ${process.platform}`)
   }
 
   // 检查 dependencies（可执行文件）
+  const depResults: DependencyCheckResult[] = []
   if (frontmatter.dependencies) {
     for (const dep of frontmatter.dependencies) {
-      const found = Bun.which(dep)
-      if (!found) {
+      const path = Bun.which(dep)
+      depResults.push({ name: dep, found: !!path, path: path ?? undefined })
+      if (!path) {
         errors.push(`依赖缺失: 可执行文件 "${dep}" 未找到`)
       }
     }
   }
+  const depsPassed = depResults.every((r) => r.found)
 
   // 检查 env（环境变量）
+  const envResults: EnvCheckResult[] = []
   if (frontmatter.env) {
     for (const envVar of frontmatter.env) {
-      if (!process.env[envVar]) {
+      const found = !!process.env[envVar]
+      envResults.push({ name: envVar, found })
+      if (!found) {
         errors.push(`环境变量缺失: "${envVar}" 未设置`)
       }
     }
+  }
+  const envPassed = envResults.every((r) => r.found)
+
+  const detail: EligibilityDetail = {
+    os: { passed: osPassed, current: process.platform, required: frontmatter.os },
+    dependencies: { passed: depsPassed, results: depResults },
+    env: { passed: envPassed, results: envResults },
   }
 
   return {
     eligible: errors.length === 0,
     errors,
+    detail,
   }
 }
