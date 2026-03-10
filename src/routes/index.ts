@@ -1,13 +1,14 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { health } from './health.ts'
-import { agents } from './agents.ts'
+import { createAgentsRoutes } from './agents.ts'
 import { createMessagesRoutes } from './messages.ts'
 import { createStreamRoutes } from './stream.ts'
-import type { AgentRuntime } from '../agent/index.ts'
+import type { AgentManager, AgentQueue } from '../agent/index.ts'
 import type { EventBus } from '../events/index.ts'
+import type { MessageRouter } from '../channel/index.ts'
 
-export function createApp(agentRuntime: AgentRuntime, eventBus: EventBus, defaultAgentId: string) {
+export function createApp(agentManager: AgentManager, agentQueue: AgentQueue, eventBus: EventBus, router: MessageRouter) {
   const app = new Hono()
 
   // CORS — 允许 Vite dev server
@@ -19,8 +20,8 @@ export function createApp(agentRuntime: AgentRuntime, eventBus: EventBus, defaul
 
   // 挂载路由
   app.route('/api', health)
-  app.route('/api', agents)
-  app.route('/api', createMessagesRoutes(agentRuntime, defaultAgentId))
+  app.route('/api', createAgentsRoutes(agentManager))
+  app.route('/api', createMessagesRoutes(agentManager, agentQueue, router))
   app.route('/api', createStreamRoutes(eventBus))
 
   return app

@@ -1,3 +1,10 @@
 id: default
 name: "Default Assistant"
 model: "claude-sonnet-4-6"
+# trigger: "@zoer"
+# requiresTrigger: false
+# telegram:
+#   chatIds:
+#     - "tg:123456789"
+# memory:
+#   enabled: true

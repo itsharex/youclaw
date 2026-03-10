@@ -6,6 +6,7 @@ const envSchema = z.object({
   DATA_DIR: z.string().default('./data'),
   AGENT_MODEL: z.string().default('claude-sonnet-4-6'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
 })
 
 export type EnvConfig = z.infer<typeof envSchema>

@@ -1,10 +1,9 @@
-import { resolve } from 'node:path'
-import { readFileSync, existsSync } from 'node:fs'
-import { loadEnv, getEnv, getPaths, ROOT_DIR } from './config/index.ts'
+import { loadEnv, getEnv } from './config/index.ts'
 import { initLogger, getLogger } from './logger/index.ts'
 import { initDatabase } from './db/index.ts'
 import { EventBus } from './events/index.ts'
-import { AgentRuntime } from './agent/index.ts'
+import { AgentManager, AgentQueue } from './agent/index.ts'
+import { MessageRouter, TelegramChannel } from './channel/index.ts'
 import { createApp } from './routes/index.ts'
 
 async function main() {
@@ -22,21 +21,33 @@ async function main() {
   // 4. 创建 EventBus
   const eventBus = new EventBus()
 
-  // 5. 构建系统提示词
-  const systemPrompt = buildSystemPrompt()
+  // 5. 创建 AgentManager 并加载 agents
+  const agentManager = new AgentManager(eventBus)
+  await agentManager.loadAgents()
 
-  // 6. 创建 AgentRuntime
-  const defaultAgentId = 'default'
-  const agentConfig = {
-    id: defaultAgentId,
-    name: 'Default Assistant',
-    model: env.AGENT_MODEL,
-    workspaceDir: resolve(getPaths().agents, defaultAgentId),
+  // 6. 创建 AgentQueue
+  const agentQueue = new AgentQueue(agentManager)
+
+  // 7. 创建 MessageRouter
+  const router = new MessageRouter(agentManager, agentQueue, eventBus)
+
+  // 8. 如果有 TELEGRAM_BOT_TOKEN，创建 TelegramChannel 并连接
+  if (env.TELEGRAM_BOT_TOKEN) {
+    const telegramChannel = new TelegramChannel(env.TELEGRAM_BOT_TOKEN, {
+      onMessage: (message) => router.handleInbound(message),
+    })
+    router.addChannel(telegramChannel)
+
+    telegramChannel.connect().catch((err) => {
+      logger.error({ error: err }, 'Telegram 连接失败')
+    })
+    logger.info('Telegram channel 已配置')
+  } else {
+    logger.info('未配置 TELEGRAM_BOT_TOKEN，跳过 Telegram channel')
   }
-  const agentRuntime = new AgentRuntime(agentConfig, eventBus, systemPrompt)
 
-  // 7. 创建 HTTP 服务
-  const app = createApp(agentRuntime, eventBus, defaultAgentId)
+  // 9. 创建 HTTP 服务
+  const app = createApp(agentManager, agentQueue, eventBus, router)
 
   const server = Bun.serve({
     port: env.PORT,
@@ -46,7 +57,7 @@ async function main() {
   logger.info({ port: env.PORT }, `HTTP 服务已启动: http://localhost:${env.PORT}`)
   logger.info('ZoerClaw 已就绪')
 
-  // 8. 优雅关闭
+  // 10. 优雅关闭
   const shutdown = () => {
     logger.info('正在关闭...')
     server.stop()
@@ -55,31 +66,6 @@ async function main() {
 
   process.on('SIGTERM', shutdown)
   process.on('SIGINT', shutdown)
-}
-
-function buildSystemPrompt(): string {
-  const promptsDir = getPaths().prompts
-  let prompt = ''
-
-  // 加载基础系统提示词
-  const systemPath = resolve(promptsDir, 'system.md')
-  if (existsSync(systemPath)) {
-    prompt += readFileSync(systemPath, 'utf-8')
-  }
-
-  // 加载并填充环境上下文
-  const envPath = resolve(promptsDir, 'env.md')
-  if (existsSync(envPath)) {
-    let envPrompt = readFileSync(envPath, 'utf-8')
-    envPrompt = envPrompt
-      .replace('{{date}}', new Date().toISOString().split('T')[0]!)
-      .replace('{{os}}', process.platform)
-      .replace('{{platform}}', process.arch)
-      .replace('{{cwd}}', process.cwd())
-    prompt += '\n\n' + envPrompt
-  }
-
-  return prompt
 }
 
 main().catch((err) => {
