@@ -1123,7 +1123,7 @@ describe('pruneOldTaskRunLogs', () => {
 describe('Scheduler.runManually', () => {
   beforeEach(() => cleanTables('messages', 'chats', 'scheduled_tasks', 'task_run_logs'))
 
-  test('手动执行成功返回结果', async () => {
+  test('手动执行成功返回结果并记录 task_run_logs', async () => {
     createTask({
       id: 'manual-1',
       agentId: 'agent-1',
@@ -1144,9 +1144,15 @@ describe('Scheduler.runManually', () => {
     // 应该保存了消息
     const messages = getMessages('task:manual-1', 10)
     expect(messages.length).toBe(2)
+
+    // 应该记录了运行日志
+    const logs = getTaskRunLogs('manual-1')
+    expect(logs.length).toBe(1)
+    expect(logs[0].status).toBe('success')
+    expect(logs[0].result).toContain('[manual]')
   })
 
-  test('手动执行不影响 consecutive_failures 和 running_since', async () => {
+  test('手动执行失败也记录 task_run_logs', async () => {
     createTask({
       id: 'manual-2',
       agentId: 'agent-1',
@@ -1168,5 +1174,103 @@ describe('Scheduler.runManually', () => {
     const task = getTask('manual-2')!
     expect(task.consecutive_failures).toBe(0)
     expect(task.running_since).toBeNull()
+
+    // 应该记录了失败日志
+    const logs = getTaskRunLogs('manual-2')
+    expect(logs.length).toBe(1)
+    expect(logs[0].status).toBe('error')
+    expect(logs[0].error).toContain('[manual]')
+  })
+})
+
+// ===== EventBus 推送 =====
+
+describe('Scheduler.executeTask — EventBus 推送', () => {
+  beforeEach(() => {
+    cleanTables('messages', 'chats', 'scheduled_tasks', 'task_run_logs')
+    mockEventBus.emit.mockClear()
+  })
+
+  test('成功执行后通过 EventBus 发送 complete 事件', async () => {
+    createTask({
+      id: 'evt-1',
+      agentId: 'agent-evt',
+      chatId: 'task:evt-1',
+      prompt: 'test',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() - 1000).toISOString(),
+    })
+
+    const mockQueue = { enqueue: mock(() => Promise.resolve('事件结果')) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('evt-1')!)
+
+    expect(mockEventBus.emit).toHaveBeenCalledTimes(1)
+    const emittedEvent = mockEventBus.emit.mock.calls[0][0]
+    expect(emittedEvent.type).toBe('complete')
+    expect(emittedEvent.agentId).toBe('agent-evt')
+    expect(emittedEvent.chatId).toBe('task:evt-1')
+    expect(emittedEvent.fullText).toBe('事件结果')
+    expect(emittedEvent.sessionId).toBe('task:evt-1')
+  })
+
+  test('执行失败时不发送 EventBus 事件', async () => {
+    createTask({
+      id: 'evt-2',
+      agentId: 'agent-evt',
+      chatId: 'task:evt-2',
+      prompt: 'test',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() - 1000).toISOString(),
+    })
+
+    const mockQueue = { enqueue: mock(() => Promise.reject(new Error('fail'))) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('evt-2')!)
+
+    expect(mockEventBus.emit).not.toHaveBeenCalled()
+  })
+})
+
+// ===== tick 竞态条件防护 =====
+
+describe('Scheduler.tick — 竞态条件防护', () => {
+  beforeEach(() => cleanTables('messages', 'chats', 'scheduled_tasks', 'task_run_logs'))
+
+  test('tick 在 executeTask 之前同步设置 running_since', async () => {
+    const pastTime = new Date(Date.now() - 5000).toISOString()
+    createTask({
+      id: 'race-1',
+      agentId: 'agent-1',
+      chatId: 'task:race-1',
+      prompt: 'test',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: pastTime,
+    })
+
+    // enqueue 延迟返回，模拟慢执行
+    let resolveEnqueue: (v: string) => void
+    const enqueuePromise = new Promise<string>((r) => { resolveEnqueue = r })
+    const mockQueue = { enqueue: mock(() => enqueuePromise) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    // @ts-ignore — 测试私有方法
+    await scheduler.tick()
+
+    // tick 返回后（executeTask 还在等 enqueue），running_since 应已设置
+    const during = getTask('race-1')!
+    expect(during.running_since).not.toBeNull()
+
+    // 再次查询到期任务，应该查不到（已被锁定）
+    const dueTasks = getTasksDueBy(new Date().toISOString())
+    expect(dueTasks.find((t) => t.id === 'race-1')).toBeUndefined()
+
+    resolveEnqueue!('done')
+    await new Promise((r) => setTimeout(r, 100))
   })
 })
