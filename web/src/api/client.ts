@@ -65,6 +65,11 @@ export async function createAgent(data: { id: string; name: string; model?: stri
   })
 }
 
+// 获取单个 agent 的完整配置（含子 Agent 定义）
+export async function getAgentConfig(agentId: string) {
+  return apiFetch<Record<string, unknown>>(`/api/agents/${encodeURIComponent(agentId)}`)
+}
+
 // 更新 agent 配置
 export async function updateAgentConfig(agentId: string, data: Record<string, unknown>) {
   return apiFetch<{ ok: boolean }>(`/api/agents/${agentId}`, {
