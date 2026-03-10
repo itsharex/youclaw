@@ -39,6 +39,15 @@ export function parseFrontmatter(raw: string): ParseResult {
     throw new Error('SKILL.md frontmatter 缺少必需字段: description')
   }
 
+  // 解析 install 字段（Record<string, string>）
+  let install: Record<string, string> | undefined
+  if (parsed.install && typeof parsed.install === 'object' && !Array.isArray(parsed.install)) {
+    install = {}
+    for (const [key, value] of Object.entries(parsed.install as Record<string, unknown>)) {
+      install[key] = String(value)
+    }
+  }
+
   const frontmatter: SkillFrontmatter = {
     name: parsed.name,
     description: String(parsed.description),
@@ -47,6 +56,9 @@ export function parseFrontmatter(raw: string): ParseResult {
     dependencies: Array.isArray(parsed.dependencies) ? (parsed.dependencies as unknown[]).map(String) : undefined,
     env: Array.isArray(parsed.env) ? (parsed.env as unknown[]).map(String) : undefined,
     tools: Array.isArray(parsed.tools) ? (parsed.tools as unknown[]).map(String) : undefined,
+    tags: Array.isArray(parsed.tags) ? (parsed.tags as unknown[]).map(String) : undefined,
+    globs: Array.isArray(parsed.globs) ? (parsed.globs as unknown[]).map(String) : undefined,
+    install,
   }
 
   return { frontmatter, content }
