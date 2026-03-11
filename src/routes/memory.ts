@@ -5,6 +5,23 @@ import type { AgentManager } from '../agent/index.ts'
 export function createMemoryRoutes(memoryManager: MemoryManager, agentManager: AgentManager) {
   const memory = new Hono()
 
+  // ===== 全局 Memory =====
+
+  // GET /api/memory/global — 全局 MEMORY.md 内容
+  memory.get('/memory/global', (c) => {
+    const content = memoryManager.getGlobalMemory()
+    return c.json({ content })
+  })
+
+  // PUT /api/memory/global — 更新全局 MEMORY.md
+  memory.put('/memory/global', async (c) => {
+    const body = await c.req.json<{ content: string }>()
+    memoryManager.updateGlobalMemory(body.content)
+    return c.json({ ok: true })
+  })
+
+  // ===== Agent Memory =====
+
   // GET /api/agents/:id/memory — MEMORY.md 内容
   memory.get('/agents/:id/memory', (c) => {
     const id = c.req.param('id')

@@ -3,6 +3,8 @@ import { resolve } from 'node:path'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 
+const GLOBAL_AGENT_ID = '_global'
+
 export class MemoryManager {
   private getAgentMemoryDir(agentId: string): string {
     const agentsDir = getPaths().agents
@@ -30,6 +32,24 @@ export class MemoryManager {
       mkdirSync(logsDir, { recursive: true })
     }
   }
+
+  // ===== 全局 Memory =====
+
+  /**
+   * 获取全局 MEMORY.md 内容
+   */
+  getGlobalMemory(): string {
+    return this.getMemory(GLOBAL_AGENT_ID)
+  }
+
+  /**
+   * 更新全局 MEMORY.md
+   */
+  updateGlobalMemory(content: string): void {
+    this.updateMemory(GLOBAL_AGENT_ID, content)
+  }
+
+  // ===== Agent Memory =====
 
   /**
    * 获取 agent 的 MEMORY.md 内容
@@ -110,9 +130,10 @@ export class MemoryManager {
 
   /**
    * 获取记忆上下文（注入到系统提示词中）
-   * 包含长期记忆和最近 3 天的日志摘要
+   * 包含全局记忆、长期记忆和最近 3 天的日志摘要
    */
   getMemoryContext(agentId: string): string {
+    const globalMemory = this.getGlobalMemory()
     const longTermMemory = this.getMemory(agentId)
     const dates = this.getDailyLogDates(agentId)
     const recentDates = dates.slice(0, 3)
@@ -125,13 +146,16 @@ export class MemoryManager {
       }
     }
 
-    return `<memory>
-<long_term>
-${longTermMemory}
-</long_term>
-<recent_logs>
-${recentLogs.trimEnd()}
-</recent_logs>
-</memory>`
+    const parts: string[] = ['<memory>']
+
+    if (globalMemory) {
+      parts.push(`<global_memory>\n${globalMemory}\n</global_memory>`)
+    }
+
+    parts.push(`<long_term>\n${longTermMemory}\n</long_term>`)
+    parts.push(`<recent_logs>\n${recentLogs.trimEnd()}\n</recent_logs>`)
+    parts.push('</memory>')
+
+    return parts.join('\n')
   }
 }
