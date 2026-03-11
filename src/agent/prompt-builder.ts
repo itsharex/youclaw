@@ -57,8 +57,11 @@ export class PromptBuilder {
 
     // 注入记忆上下文
     if (this.memoryManager && context) {
-      const recentDays = config.memory?.recentDays ?? 3
-      const memoryContext = this.memoryManager.getMemoryContext(context.agentId, recentDays)
+      const memoryConfig = config.memory
+      const memoryContext = this.memoryManager.getMemoryContext(context.agentId, {
+        recentDays: memoryConfig?.recentDays,
+        maxContextChars: memoryConfig?.maxContextChars,
+      })
       if (memoryContext) {
         parts.push(memoryContext)
       }

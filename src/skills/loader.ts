@@ -5,7 +5,7 @@ import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { parseFrontmatter } from './frontmatter.ts'
 import { checkEligibility } from './eligibility.ts'
-import type { Skill, SkillsConfig } from './types.ts'
+import type { Skill, SkillsConfig, AgentSkillsView } from './types.ts'
 import { DEFAULT_SKILLS_CONFIG } from './types.ts'
 import type { AgentConfig } from '../agent/types.ts'
 import { getSkillSettings, setSkillEnabled as dbSetSkillEnabled } from '../db/index.ts'
@@ -101,6 +101,26 @@ export class SkillsLoader {
     dbSetSkillEnabled(name, enabled)
     const skills = this.refresh()
     return skills.find((s) => s.name === name) ?? null
+  }
+
+  /**
+   * 获取特定 agent 的 skills 视图
+   */
+  getAgentSkillsView(agentConfig: AgentConfig): AgentSkillsView {
+    const allSkills = this.loadAllSkills()
+
+    // available: 该 agent 可用的所有 skills
+    const available = allSkills
+
+    // enabled: 已启用的（在 agent.yaml skills 列表中）
+    const enabled = agentConfig.skills && agentConfig.skills.length > 0
+      ? allSkills.filter((s) => agentConfig.skills!.includes(s.name))
+      : allSkills
+
+    // eligible: 通过资格检查的
+    const eligible = enabled.filter((s) => s.eligible)
+
+    return { available, enabled, eligible }
   }
 
   /**

@@ -12,6 +12,13 @@ export interface SkillFrontmatter {
   globs?: string[]        // 匹配的文件模式，如 ["*.py", "*.ts"]
   priority?: SkillPriority // 优先级：critical > normal > low
   install?: Record<string, string> // 安装指南，如 { brew: "brew install chrome", apt: "apt install chromium" }
+
+  // 扩展字段
+  requires?: string[]      // 依赖哪些其他 skill
+  conflicts?: string[]     // 与哪些 skill 冲突
+  setup?: string           // 安装后执行的命令
+  teardown?: string        // 卸载前执行的命令
+  source?: string          // 来源 URL（用于远程安装）
 }
 
 /** 单项依赖检查结果 */
@@ -46,6 +53,13 @@ export interface Skill {
   loadedAt: number         // 加载时间戳（ms）
   enabled: boolean         // 用户是否启用（默认 true）
   usable: boolean          // eligible && enabled
+}
+
+/** Agent Skills 视图 */
+export interface AgentSkillsView {
+  available: Skill[]       // 该 agent 可用的所有 skills
+  enabled: Skill[]         // 已启用的（在 agent.yaml skills 列表中）
+  eligible: Skill[]        // 通过资格检查的
 }
 
 /** Skills 配置 */
