@@ -105,5 +105,33 @@ export function createMemoryRoutes(memoryManager: MemoryManager, agentManager: A
     return c.json({ content })
   })
 
+  // ===== 快照 =====
+
+  // POST /api/agents/:id/memory/snapshot — 生成快照
+  memory.post('/agents/:id/memory/snapshot', (c) => {
+    const id = c.req.param('id')
+    const managed = agentManager.getAgent(id)
+
+    if (!managed) {
+      return c.json({ error: 'Agent not found' }, 404)
+    }
+
+    memoryManager.saveSnapshot(id)
+    return c.json({ ok: true })
+  })
+
+  // GET /api/agents/:id/memory/snapshot — 获取快照
+  memory.get('/agents/:id/memory/snapshot', (c) => {
+    const id = c.req.param('id')
+    const managed = agentManager.getAgent(id)
+
+    if (!managed) {
+      return c.json({ error: 'Agent not found' }, 404)
+    }
+
+    const content = memoryManager.getSnapshot(id)
+    return c.json({ content })
+  })
+
   return memory
 }

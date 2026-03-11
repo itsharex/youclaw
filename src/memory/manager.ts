@@ -15,6 +15,10 @@ export class MemoryManager {
     return resolve(this.getAgentMemoryDir(agentId), 'MEMORY.md')
   }
 
+  private getSnapshotFilePath(agentId: string): string {
+    return resolve(this.getAgentMemoryDir(agentId), 'MEMORY_SNAPSHOT.md')
+  }
+
   private getLogsDir(agentId: string): string {
     return resolve(this.getAgentMemoryDir(agentId), 'logs')
   }
@@ -249,5 +253,88 @@ export class MemoryManager {
     const filePath = resolve(this.getConversationsDir(agentId), filename)
     Bun.write(filePath, content)
     getLogger().info({ agentId, filename }, '对话存档已保存')
+  }
+
+  // ===== 快照 =====
+
+  /**
+   * 导出 agent 的核心记忆快照
+   */
+  exportSnapshot(agentId: string): string {
+    const globalMemory = this.getGlobalMemory()
+    const longTermMemory = this.getMemory(agentId)
+    const dates = this.getDailyLogDates(agentId)
+    const recentDates = dates.slice(0, 7)
+
+    const parts: string[] = []
+    parts.push(`# Memory Snapshot: ${agentId}`)
+    parts.push(`\n**Generated**: ${new Date().toISOString()}\n`)
+
+    if (globalMemory) {
+      parts.push('## Global Memory\n')
+      parts.push(globalMemory)
+      parts.push('')
+    }
+
+    parts.push('## Long-term Memory\n')
+    parts.push(longTermMemory || '*（空）*')
+    parts.push('')
+
+    if (recentDates.length > 0) {
+      parts.push('## Recent Logs Summary\n')
+      for (const date of recentDates) {
+        const log = this.getDailyLog(agentId, date)
+        if (log) {
+          parts.push(`### ${date}\n`)
+          parts.push(log.length > 1000 ? log.slice(0, 1000) + '\n...(truncated)' : log)
+          parts.push('')
+        }
+      }
+    }
+
+    return parts.join('\n')
+  }
+
+  /**
+   * 保存快照文件
+   */
+  saveSnapshot(agentId: string): string {
+    const content = this.exportSnapshot(agentId)
+    this.ensureMemoryDir(agentId)
+    const filePath = this.getSnapshotFilePath(agentId)
+    Bun.write(filePath, content)
+    getLogger().info({ agentId }, 'MEMORY_SNAPSHOT.md 已保存')
+    return content
+  }
+
+  /**
+   * 获取快照内容
+   */
+  getSnapshot(agentId: string): string {
+    const filePath = this.getSnapshotFilePath(agentId)
+    if (!existsSync(filePath)) return ''
+    return readFileSync(filePath, 'utf-8')
+  }
+
+  /**
+   * 从快照恢复（当 MEMORY.md 为空但 MEMORY_SNAPSHOT.md 存在时）
+   */
+  restoreFromSnapshot(agentId: string): boolean {
+    const memory = this.getMemory(agentId)
+    if (memory) return false
+
+    const snapshot = this.getSnapshot(agentId)
+    if (!snapshot) return false
+
+    const match = snapshot.match(/## Long-term Memory\n\n([\s\S]*?)(?=\n## |$)/)
+    const content = match?.[1]?.trim()
+
+    if (content && content !== '*（空）*') {
+      this.updateMemory(agentId, content)
+      getLogger().info({ agentId }, '已从 MEMORY_SNAPSHOT.md 恢复记忆')
+      return true
+    }
+
+    return false
   }
 }
