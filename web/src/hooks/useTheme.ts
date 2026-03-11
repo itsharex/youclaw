@@ -7,6 +7,13 @@ const THEME_KEY = "youclaw-theme"
 
 export function applyThemeToDOM(theme: Theme): void {
   const body = document.body
+
+  // 切换时禁用所有 transition，避免颜色渐变不同步
+  document.documentElement.style.setProperty("--disable-transitions", "1")
+  const style = document.createElement("style")
+  style.textContent = "*, *::before, *::after { transition-duration: 0s !important; }"
+  document.head.appendChild(style)
+
   if (theme === "system") {
     const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches
     body.classList.toggle("dark", systemDark)
@@ -15,6 +22,14 @@ export function applyThemeToDOM(theme: Theme): void {
   } else {
     body.classList.remove("dark")
   }
+
+  // 下一帧恢复 transition
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      document.head.removeChild(style)
+      document.documentElement.style.removeProperty("--disable-transitions")
+    })
+  })
 }
 
 // 获取保存的主题
