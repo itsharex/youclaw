@@ -20,7 +20,7 @@ const store = new Store({
     theme: "system" as string,
     allowPrerelease: false,
     apiKey: "",
-    windowBounds: { x: undefined, y: undefined, width: 1200, height: 800 } as {
+    windowBounds: { x: undefined, y: undefined, width: 1400, height: 900 } as {
       x?: number;
       y?: number;
       width: number;
