@@ -111,7 +111,7 @@ export class MessageRouter {
       // 记录到每日日志
       if (this.memoryManager) {
         try {
-          this.memoryManager.appendDailyLog(config.id, message.chatId, message.content, reply)
+          this.memoryManager.appendDailyLog(config.id, message.chatId, message.content, reply, config.memory?.maxLogEntryLength)
         } catch (logErr) {
           getLogger().error({ error: logErr, agentId: config.id }, '记录每日日志失败')
         }

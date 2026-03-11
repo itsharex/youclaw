@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
@@ -75,17 +75,29 @@ export class MemoryManager {
   }
 
   /**
-   * 追加每日日志
+   * 截断文本到指定长度
    */
-  appendDailyLog(agentId: string, chatId: string, userMessage: string, botReply: string): void {
+  private truncate(text: string, maxLength: number): string {
+    if (text.length <= maxLength) return text
+    return text.slice(0, maxLength) + `... *(${text.length} chars total)*`
+  }
+
+  /**
+   * 追加每日日志（支持截断）
+   */
+  appendDailyLog(agentId: string, chatId: string, userMessage: string, botReply: string, maxLogEntryLength?: number): void {
     this.ensureLogsDir(agentId)
+
+    const maxLen = maxLogEntryLength ?? 500
+    const truncatedUser = this.truncate(userMessage, Math.min(maxLen, 300))
+    const truncatedReply = this.truncate(botReply, maxLen)
 
     const now = new Date()
     const date = now.toISOString().split('T')[0]!
     const time = now.toTimeString().slice(0, 5)
     const logPath = resolve(this.getLogsDir(agentId), `${date}.md`)
 
-    const entry = `\n## ${time} [${chatId}]\n**User**: ${userMessage}\n**Assistant**: ${botReply}\n`
+    const entry = `\n## ${time} [${chatId}]\n**User**: ${truncatedUser}\n**Assistant**: ${truncatedReply}\n`
 
     let existing = ''
     if (existsSync(logPath)) {
@@ -126,6 +138,33 @@ export class MemoryManager {
     }
 
     return readFileSync(logPath, 'utf-8')
+  }
+
+  /**
+   * 清理超期日志文件
+   */
+  pruneOldLogs(agentId: string, retainDays: number = 30): number {
+    const logsDir = this.getLogsDir(agentId)
+    if (!existsSync(logsDir)) return 0
+
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - retainDays)
+    const cutoffStr = cutoff.toISOString().split('T')[0]!
+
+    const files = readdirSync(logsDir).filter((f) => f.endsWith('.md'))
+    let deleted = 0
+    for (const file of files) {
+      const date = file.replace('.md', '')
+      if (date < cutoffStr) {
+        unlinkSync(resolve(logsDir, file))
+        deleted++
+      }
+    }
+
+    if (deleted > 0) {
+      getLogger().info({ agentId, deleted, retainDays }, '旧日志已清理')
+    }
+    return deleted
   }
 
   /**
