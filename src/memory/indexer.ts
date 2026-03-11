@@ -110,12 +110,11 @@ export class MemoryIndexer {
   indexFile(agentId: string, fileType: string, filePath: string, content: string): void {
     const db = getDatabase()
     // 先删除该文件的旧索引
-    db.run('DELETE FROM memory_fts WHERE file_path = ?', [filePath])
+    db.prepare('DELETE FROM memory_fts WHERE file_path = ?').run(filePath)
     // 插入新索引
-    db.run(
-      'INSERT INTO memory_fts (agent_id, file_type, file_path, content) VALUES (?, ?, ?, ?)',
-      [agentId, fileType, filePath, content],
-    )
+    db.prepare(
+      'INSERT INTO memory_fts (agent_id, file_type, file_path, content) VALUES (?, ?, ?, ?)'
+    ).run(agentId, fileType, filePath, content)
   }
 
   /**
@@ -123,7 +122,7 @@ export class MemoryIndexer {
    */
   removeFile(filePath: string): void {
     const db = getDatabase()
-    db.run('DELETE FROM memory_fts WHERE file_path = ?', [filePath])
+    db.prepare('DELETE FROM memory_fts WHERE file_path = ?').run(filePath)
   }
 
   /**
@@ -157,7 +156,7 @@ export class MemoryIndexer {
     params.push(limit)
 
     try {
-      const rows = db.query(sql).all(...params) as Array<{
+      const rows = db.prepare(sql).all(...params) as Array<{
         agent_id: string
         file_type: string
         file_path: string

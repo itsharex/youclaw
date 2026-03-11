@@ -281,7 +281,7 @@ export class MemoryManager {
   saveConversationArchive(agentId: string, filename: string, content: string): void {
     this.ensureConversationsDir(agentId)
     const filePath = resolve(this.getConversationsDir(agentId), filename)
-    Bun.write(filePath, content)
+    writeFileSync(filePath, content, 'utf-8')
     getLogger().info({ agentId, filename }, '对话存档已保存')
   }
 
@@ -332,7 +332,7 @@ export class MemoryManager {
     const content = this.exportSnapshot(agentId)
     this.ensureMemoryDir(agentId)
     const filePath = this.getSnapshotFilePath(agentId)
-    Bun.write(filePath, content)
+    writeFileSync(filePath, content, 'utf-8')
     getLogger().info({ agentId }, 'MEMORY_SNAPSHOT.md 已保存')
     return content
   }
