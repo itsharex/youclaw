@@ -18,6 +18,10 @@ const installSchema = z.object({
   method: z.string().min(1),
 })
 
+const toggleSchema = z.object({
+  enabled: z.boolean(),
+})
+
 export function createSkillsRoutes(skillsLoader: SkillsLoader, agentManager: AgentManager) {
   const skills = new Hono()
 
@@ -132,6 +136,25 @@ export function createSkillsRoutes(skillsLoader: SkillsLoader, agentManager: Age
       logger.error({ skillName, method, error: msg }, '安装失败')
       return c.json({ error: msg }, 500)
     }
+  })
+
+  // POST /api/skills/:name/toggle — 启用/停用 skill
+  skills.post('/skills/:name/toggle', async (c) => {
+    const name = c.req.param('name')
+    const body = await c.req.json()
+    const parsed = toggleSchema.safeParse(body)
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid parameters', details: parsed.error.issues }, 400)
+    }
+
+    const allSkills = skillsLoader.loadAllSkills()
+    const exists = allSkills.find((s) => s.name === name)
+    if (!exists) {
+      return c.json({ error: 'Skill not found' }, 404)
+    }
+
+    const updated = skillsLoader.setSkillEnabled(name, parsed.data.enabled)
+    return c.json(updated)
   })
 
   // GET /api/skills/:name — 单个 skill 详情

@@ -26,6 +26,8 @@ function createSkill(globs?: string[]): Skill {
       env: { passed: true, results: [] },
     },
     loadedAt: Date.now(),
+    enabled: true,
+    usable: true,
   }
 }
 

@@ -8,6 +8,7 @@ import { checkEligibility } from './eligibility.ts'
 import type { Skill, SkillsConfig } from './types.ts'
 import { DEFAULT_SKILLS_CONFIG } from './types.ts'
 import type { AgentConfig } from '../agent/types.ts'
+import { getSkillSettings, setSkillEnabled as dbSetSkillEnabled } from '../db/index.ts'
 
 export class SkillsLoader {
   private cache: Map<string, Skill> = new Map()
@@ -60,6 +61,14 @@ export class SkillsLoader {
       }
     }
 
+    // 读取用户启用/停用设置，合并到每个 skill
+    const settings = getSkillSettings()
+    for (const [name, skill] of skillMap) {
+      const setting = settings[name]
+      skill.enabled = setting ? setting.enabled : true
+      skill.usable = skill.eligible && skill.enabled
+    }
+
     // 更新缓存
     this.cache = skillMap
     this.lastLoadTime = Date.now()
@@ -83,6 +92,15 @@ export class SkillsLoader {
 
     // 只返回 agent 指定的 skills
     return allSkills.filter((skill) => agentConfig.skills!.includes(skill.name))
+  }
+
+  /**
+   * 设置 skill 的启用/停用状态，并刷新缓存
+   */
+  setSkillEnabled(name: string, enabled: boolean): Skill | null {
+    dbSetSkillEnabled(name, enabled)
+    const skills = this.refresh()
+    return skills.find((s) => s.name === name) ?? null
   }
 
   /**
@@ -209,6 +227,8 @@ export class SkillsLoader {
           eligibilityErrors: errors,
           eligibilityDetail: detail,
           loadedAt: Date.now(),
+          enabled: true,  // 默认启用，后续由 settings 覆盖
+          usable: eligible,
         }
 
         // 高优先级覆盖低优先级

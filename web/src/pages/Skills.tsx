@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getSkills, configureSkillEnv, installSkill } from '../api/client'
+import { getSkills, configureSkillEnv, installSkill, toggleSkill } from '../api/client'
 import type { Skill } from '../api/client'
 import { Puzzle, CheckCircle, AlertTriangle, XCircle, FolderOpen, Globe, Cpu, Terminal, Key, Wrench, Download, Copy, Check, Loader2 } from 'lucide-react'
 import { Badge } from '../components/ui/badge'
@@ -11,13 +11,16 @@ import { useI18n } from '../i18n'
 const sourceOrder: Skill['source'][] = ['workspace', 'builtin', 'user']
 
 function EligibilityIcon({ skill }: { skill: Skill }) {
-  if (skill.eligible) {
+  if (!skill.enabled) {
+    return <XCircle className="h-4 w-4 text-muted-foreground" />
+  }
+  if (skill.usable) {
     return <CheckCircle className="h-4 w-4 text-green-400" />
   }
-  if (skill.eligibilityErrors.length > 0) {
-    return <XCircle className="h-4 w-4 text-red-400" />
+  if (skill.eligible) {
+    return <AlertTriangle className="h-4 w-4 text-yellow-400" />
   }
-  return <AlertTriangle className="h-4 w-4 text-yellow-400" />
+  return <XCircle className="h-4 w-4 text-red-400" />
 }
 
 export function Skills() {
@@ -77,7 +80,7 @@ export function Skills() {
                   >
                     <div className={cn(
                       'w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium shrink-0',
-                      skill.eligible ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                      !skill.enabled ? 'bg-muted text-muted-foreground' : skill.usable ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
                     )}>
                       <Puzzle className="h-4 w-4" />
                     </div>
@@ -102,11 +105,11 @@ export function Skills() {
             <div className="flex items-center gap-4">
               <div className={cn(
                 'w-12 h-12 rounded-full flex items-center justify-center',
-                selectedSkill.eligible ? 'bg-green-500/10' : 'bg-red-500/10'
+                !selectedSkill.enabled ? 'bg-muted' : selectedSkill.usable ? 'bg-green-500/10' : 'bg-red-500/10'
               )}>
                 <Puzzle className="h-6 w-6" />
               </div>
-              <div>
+              <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl font-semibold">{selectedSkill.name}</h1>
                   <Badge variant={selectedSkill.source === 'workspace' ? 'default' : 'secondary'}>
@@ -115,20 +118,37 @@ export function Skills() {
                 </div>
                 <p className="text-sm text-muted-foreground">{selectedSkill.frontmatter.description}</p>
               </div>
+              <Button
+                variant={selectedSkill.enabled ? 'secondary' : 'default'}
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await toggleSkill(selectedSkill.name, !selectedSkill.enabled)
+                    loadSkills()
+                  } catch {}
+                }}
+              >
+                {selectedSkill.enabled ? t.skills.disable : t.skills.enable}
+              </Button>
             </div>
 
             {/* Eligibility status */}
             <div className="rounded-md border border-border p-4 space-y-3">
               <div className="flex items-center gap-2 text-sm font-medium">
-                {selectedSkill.eligible ? (
+                {!selectedSkill.enabled ? (
+                  <>
+                    <XCircle className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">{t.skills.disabled}</span>
+                  </>
+                ) : selectedSkill.usable ? (
                   <>
                     <CheckCircle className="h-4 w-4 text-green-400" />
-                    <span className="text-green-400">{t.skills.eligible}</span>
+                    <span className="text-green-400">{t.skills.usable}</span>
                   </>
                 ) : (
                   <>
-                    <XCircle className="h-4 w-4 text-red-400" />
-                    <span className="text-red-400">{t.skills.notEligible}</span>
+                    <AlertTriangle className="h-4 w-4 text-yellow-400" />
+                    <span className="text-yellow-400">{t.skills.enabledNotReady}</span>
                   </>
                 )}
               </div>
@@ -143,7 +163,7 @@ export function Skills() {
               )}
 
               {/* 缺失依赖 + 有安装命令：显示安装按钮 */}
-              {!selectedSkill.eligible && selectedSkill.frontmatter.install && Object.keys(selectedSkill.frontmatter.install).length > 0 && (
+              {selectedSkill.eligibilityDetail?.dependencies.passed === false && selectedSkill.frontmatter.install && Object.keys(selectedSkill.frontmatter.install).length > 0 && (
                 <div className="pt-2 border-t border-border/50 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                     <Download className="h-3.5 w-3.5" />

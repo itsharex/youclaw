@@ -44,6 +44,8 @@ export interface Skill {
   eligibilityErrors: string[] // 资格检查失败原因
   eligibilityDetail: EligibilityDetail // 细粒度资格检查详情
   loadedAt: number         // 加载时间戳（ms）
+  enabled: boolean         // 用户是否启用（默认 true）
+  usable: boolean          // eligible && enabled
 }
 
 /** Skills 配置 */
