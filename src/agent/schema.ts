@@ -67,6 +67,16 @@ export const HooksConfigSchema = z.object({
   on_session_end: z.array(HookEntrySchema).optional(),
 })
 
+// 安全策略配置 schema
+export const SecurityConfigSchema = z.object({
+  allowedTools: z.array(z.string()).optional(),
+  disallowedTools: z.array(z.string()).optional(),
+  fileAccess: z.object({
+    allowedPaths: z.array(z.string()).optional(),
+    deniedPaths: z.array(z.string()).optional(),
+  }).optional(),
+})
+
 // Agent 配置 schema
 export const AgentConfigSchema = z.object({
   id: z.string().min(1),
@@ -98,6 +108,8 @@ export const AgentConfigSchema = z.object({
   bindings: z.array(BindingSchema).optional(),
   // Hooks 系统
   hooks: HooksConfigSchema.optional(),
+  // 安全策略
+  security: SecurityConfigSchema.optional(),
 })
 
 // 从 schema 推导类型
@@ -110,3 +122,4 @@ export type Binding = z.infer<typeof BindingSchema>
 export type BindingCondition = z.infer<typeof BindingConditionSchema>
 export type HooksConfig = z.infer<typeof HooksConfigSchema>
 export type HookEntry = z.infer<typeof HookEntrySchema>
+export type SecurityConfig = z.infer<typeof SecurityConfigSchema>
