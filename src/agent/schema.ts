@@ -48,6 +48,25 @@ export const BindingSchema = z.object({
   priority: z.number().default(0),
 })
 
+// Hook 入口 schema
+export const HookEntrySchema = z.object({
+  script: z.string(),
+  tools: z.array(z.string()).optional(),
+  priority: z.number().default(0),
+})
+
+// Hooks 配置 schema
+export const HooksConfigSchema = z.object({
+  pre_process: z.array(HookEntrySchema).optional(),
+  post_process: z.array(HookEntrySchema).optional(),
+  pre_tool_use: z.array(HookEntrySchema).optional(),
+  post_tool_use: z.array(HookEntrySchema).optional(),
+  pre_compact: z.array(HookEntrySchema).optional(),
+  on_error: z.array(HookEntrySchema).optional(),
+  on_session_start: z.array(HookEntrySchema).optional(),
+  on_session_end: z.array(HookEntrySchema).optional(),
+})
+
 // Agent 配置 schema
 export const AgentConfigSchema = z.object({
   id: z.string().min(1),
@@ -73,6 +92,8 @@ export const AgentConfigSchema = z.object({
   effort: z.enum(['low', 'medium', 'high', 'max']).optional(),
   // Bindings 路由
   bindings: z.array(BindingSchema).optional(),
+  // Hooks 系统
+  hooks: HooksConfigSchema.optional(),
 })
 
 // 从 schema 推导类型
@@ -83,3 +104,5 @@ export type AgentRef = z.infer<typeof AgentRefSchema>
 export type AgentEntry = z.infer<typeof AgentEntrySchema>
 export type Binding = z.infer<typeof BindingSchema>
 export type BindingCondition = z.infer<typeof BindingConditionSchema>
+export type HooksConfig = z.infer<typeof HooksConfigSchema>
+export type HookEntry = z.infer<typeof HookEntrySchema>
