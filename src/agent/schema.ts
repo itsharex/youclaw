@@ -32,6 +32,22 @@ export const AgentRefSchema = z.object({
 // 联合类型：有 ref → 引用；无 ref → 内联
 export const AgentEntrySchema = z.union([AgentRefSchema, AgentDefinitionSchema])
 
+// Binding 条件 schema
+const BindingConditionSchema = z.object({
+  isGroup: z.boolean().optional(),
+  trigger: z.string().optional(),
+  sender: z.string().optional(),
+}).optional()
+
+// Binding schema
+export const BindingSchema = z.object({
+  channel: z.string(),
+  chatIds: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional(),
+  condition: BindingConditionSchema,
+  priority: z.number().default(0),
+})
+
 // Agent 配置 schema
 export const AgentConfigSchema = z.object({
   id: z.string().min(1),
@@ -55,6 +71,8 @@ export const AgentConfigSchema = z.object({
   mcpServers: z.record(z.string(), McpServerSchema).optional(),
   maxTurns: z.number().optional(),
   effort: z.enum(['low', 'medium', 'high', 'max']).optional(),
+  // Bindings 路由
+  bindings: z.array(BindingSchema).optional(),
 })
 
 // 从 schema 推导类型
@@ -63,3 +81,5 @@ export type McpServerConfig = z.infer<typeof McpServerSchema>
 export type AgentDefinition = z.infer<typeof AgentDefinitionSchema>
 export type AgentRef = z.infer<typeof AgentRefSchema>
 export type AgentEntry = z.infer<typeof AgentEntrySchema>
+export type Binding = z.infer<typeof BindingSchema>
+export type BindingCondition = z.infer<typeof BindingConditionSchema>
