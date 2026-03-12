@@ -14,8 +14,9 @@ Desktop AI assistant powered by Claude, inspired by nanoClaw / OpenClaw.
 
 | Layer | Choice |
 |-------|--------|
-| Runtime | Bun |
-| Backend | Hono + SQLite (`bun:sqlite`) + Pino |
+| Runtime | Node.js >= 24 |
+| Package Manager | pnpm |
+| Backend | Hono + SQLite (better-sqlite3) + Pino |
 | Agent | `@anthropic-ai/claude-agent-sdk` |
 | Frontend | Vite + React + shadcn/ui + Tailwind CSS |
 | Telegram | grammY |
@@ -25,7 +26,8 @@ Desktop AI assistant powered by Claude, inspired by nanoClaw / OpenClaw.
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) >= 1.0
+- [Node.js](https://nodejs.org/) >= 24 (required to match Electron 40's embedded Node version)
+- [pnpm](https://pnpm.io/) >= 9
 - An [Anthropic API key](https://console.anthropic.com/)
 
 ### Setup
@@ -36,8 +38,8 @@ git clone https://github.com/CodePhiliaX/youClaw.git
 cd youClaw
 
 # Install dependencies
-bun install
-cd web && npm install && cd ..
+pnpm install
+cd web && pnpm install && cd ..
 
 # Configure environment
 cp .env.example .env
@@ -48,10 +50,10 @@ cp .env.example .env
 
 ```bash
 # Start backend (hot reload)
-bun run dev
+pnpm dev
 
 # Start frontend (in another terminal)
-bun run dev:web
+pnpm dev:web
 ```
 
 Open http://localhost:5173 for the Web UI. The API server runs on http://localhost:3000.
@@ -59,20 +61,20 @@ Open http://localhost:5173 for the Web UI. The API server runs on http://localho
 ### Production
 
 ```bash
-bun run start
+pnpm start
 ```
 
 ### Electron (Desktop App)
 
 ```bash
 # Development
-bun run dev:electron
+pnpm dev:electron
 
-# Package (macOS arm64)
-bun run pack
+# Package (macOS arm64, local testing)
+pnpm pack
 
-# Distribute
-bun run dist
+# Build distributable
+pnpm dist
 ```
 
 ## Environment Variables
@@ -112,14 +114,14 @@ electron/           # Electron main process
 ## Commands
 
 ```bash
-bun run dev          # Backend dev server (hot reload)
-bun run dev:web      # Frontend dev server
-bun run dev:electron # Electron dev mode
-bun run start        # Production mode
-bun run typecheck    # TypeScript type check
-bun test             # Run tests
-bun run pack         # Package Electron app
-bun run dist         # Build distributable
+pnpm dev             # Backend dev server (hot reload)
+pnpm dev:web         # Frontend dev server
+pnpm dev:electron    # Electron dev mode
+pnpm start           # Production mode
+pnpm typecheck       # TypeScript type check
+pnpm test            # Run tests
+pnpm pack            # Package Electron app (local testing)
+pnpm dist            # Build distributable
 ```
 
 ## License

@@ -5,17 +5,21 @@
 ## 命令
 
 ```bash
-bun run dev          # 启动后端开发模式 (hot reload)
-bun run dev:web      # 启动前端开发模式
-bun run start        # 生产模式启动
-bun run typecheck    # TypeScript 类型检查
-bun test             # 运行测试
+pnpm dev             # 启动后端开发模式 (hot reload)
+pnpm dev:web         # 启动前端开发模式
+pnpm dev:electron    # 启动 Electron 开发模式
+pnpm start           # 生产模式启动
+pnpm typecheck       # TypeScript 类型检查
+pnpm test            # 运行测试
+pnpm pack            # 打包 Electron 应用（本地测试）
+pnpm dist            # 构建可分发安装包
 ```
 
 ## 技术栈
 
-- **运行时**: Bun
-- **后端**: Hono (HTTP) + bun:sqlite (数据库) + Pino (日志)
+- **运行时**: Node.js >= 24 (与 Electron 40 内置 Node 版本一致)
+- **包管理**: pnpm
+- **后端**: Hono (HTTP) + better-sqlite3 (数据库) + Pino (日志)
 - **Agent**: @anthropic-ai/claude-agent-sdk
 - **前端**: Vite + React + shadcn/ui + Tailwind CSS
 - **校验**: Zod (v4, 使用 `zod/v4` 导入)
@@ -37,7 +41,7 @@ src/
 ├── agent/          # AgentManager（加载 agent.yaml）、AgentRuntime（claude-agent-sdk）、AgentQueue（并发队列）、PromptBuilder、SubagentTracker
 ├── channel/        # MessageRouter（消息路由）、TelegramChannel
 ├── config/         # env.ts（Zod 校验环境变量）、paths.ts（路径常量）
-├── db/             # bun:sqlite 初始化、消息/会话/定时任务 CRUD
+├── db/             # better-sqlite3 初始化、消息/会话/定时任务 CRUD
 ├── events/         # EventBus + 类型定义（stream/tool_use/complete/error/subagent_*）
 ├── ipc/            # IpcWatcher（文件轮询 IPC）、任务快照写入
 ├── logger/         # Pino 日志
@@ -67,9 +71,9 @@ web/src/
 
 ## 约定
 
-- Bun 自动加载 .env，不使用 dotenv
-- 使用 `bun:sqlite` 而非 better-sqlite3
-- 使用 `Bun.file` 而非 node:fs 的 readFile/writeFile
+- 使用 `better-sqlite3` 作为 SQLite 驱动（非 bun:sqlite）
+- 使用 `node:fs` 的 readFileSync/writeFileSync（非 Bun.file）
+- 使用 `dotenv` 或 `.env` 文件加载环境变量
 - 提交信息使用 Conventional Commits（英文）
 - 代码注释使用中文
 - Agent 配置使用 YAML 格式（`agent.yaml`），Zod schema 校验

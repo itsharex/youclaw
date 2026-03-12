@@ -194,7 +194,9 @@ export function Skills() {
                       try {
                         await toggleSkill(selectedSkill.name, !selectedSkill.enabled)
                         loadSkills()
-                      } catch {}
+                      } catch (error) {
+                        console.error('Failed to toggle skill:', error)
+                      }
                     }}
                   >
                     {selectedSkill.enabled ? t.skills.disable : t.skills.enable}
