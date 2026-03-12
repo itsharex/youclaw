@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
-  MessageSquare, Bot, CalendarClock, Brain, Puzzle,
+  Bot, CalendarClock, Brain, Puzzle,
   Globe, ScrollText, Settings, PanelLeftClose, PanelLeft,
   SquarePen, MoreHorizontal, Trash2,
 } from 'lucide-react'
@@ -44,7 +44,6 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
   const isMac = platform === 'darwin'
 
   const navItems = [
-    { to: '/', icon: MessageSquare, label: t.nav.chat },
     { to: '/agents', icon: Bot, label: t.nav.agents },
     { to: '/cron', icon: CalendarClock, label: t.nav.tasks },
     { to: '/memory', icon: Brain, label: t.nav.memory },
@@ -99,37 +98,50 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
           className={cn('flex items-center h-[52px] shrink-0', ICON_PX)}
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          <button
-            type="button"
-            onClick={toggle}
-            className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
-            aria-label={isCollapsed ? t.sidebar.expand : t.sidebar.collapse}
-          >
-            {isCollapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-          </button>
           <span className={cn(
-            'text-sm font-semibold tracking-tight whitespace-nowrap overflow-hidden transition-[opacity,margin] duration-200',
-            isCollapsed ? 'opacity-0 ml-0 w-0' : 'opacity-100 ml-1.5'
+            'text-sm font-semibold tracking-tight whitespace-nowrap overflow-hidden transition-[opacity,width,margin] duration-200',
+            isCollapsed ? 'opacity-0 w-0 ml-0' : 'opacity-100 w-auto ml-1.5 mr-1'
           )}>
             YouClaw
           </span>
           <div className="flex-1 min-w-0" />
           <button
             type="button"
-            onClick={handleNewChat}
+            onClick={toggle}
             className={cn(
               'w-9 h-9 shrink-0 rounded-lg flex items-center justify-center hover:bg-accent transition-[opacity] duration-200 mr-1.5',
               isCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
             )}
-            aria-label={t.sidebar.newChat}
+            aria-label={t.sidebar.collapse}
             tabIndex={isCollapsed ? -1 : 0}
           >
-            <SquarePen className="h-4 w-4" />
+            <PanelLeftClose className="h-4 w-4" />
           </button>
         </div>
 
         {/* 页面导航 — 所有状态布局一致，仅文字被裁切 */}
         <nav className="space-y-0.5 pr-1.5">
+          {/* New Chat / 收起时作为展开按钮 */}
+          <button
+            type="button"
+            onClick={isCollapsed ? toggle : handleNewChat}
+            className={cn(
+              'flex items-center h-9 w-full rounded-lg transition-colors whitespace-nowrap overflow-hidden',
+              ICON_PX,
+              'text-muted-foreground hover:text-foreground hover:bg-accent'
+            )}
+            aria-label={isCollapsed ? t.sidebar.expand : t.sidebar.newChat}
+          >
+            <div className="w-9 h-9 shrink-0 flex items-center justify-center">
+              {isCollapsed ? <PanelLeft className="h-4 w-4" /> : <SquarePen className="h-4 w-4" />}
+            </div>
+            <span className={cn(
+              'text-sm transition-opacity duration-200',
+              isCollapsed ? 'opacity-0' : 'opacity-100'
+            )}>
+              {t.sidebar.newChat}
+            </span>
+          </button>
           {navItems.map(item => (
             <NavLink
               key={item.to}
