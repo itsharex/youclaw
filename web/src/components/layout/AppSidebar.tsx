@@ -98,12 +98,20 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
           className={cn('flex items-center h-[52px] shrink-0', ICON_PX)}
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          <span className={cn(
-            'text-sm font-semibold tracking-tight whitespace-nowrap overflow-hidden transition-[opacity,width,margin] duration-200',
-            isCollapsed ? 'opacity-0 w-0 ml-0' : 'opacity-100 w-auto ml-1.5 mr-1'
-          )}>
-            YouClaw
-          </span>
+          {isCollapsed ? (
+            <button
+              type="button"
+              onClick={toggle}
+              className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
+              aria-label={t.sidebar.expand}
+            >
+              <PanelLeft className="h-4 w-4" />
+            </button>
+          ) : (
+            <span className="text-sm font-semibold tracking-tight whitespace-nowrap ml-1.5 mr-1">
+              YouClaw
+            </span>
+          )}
           <div className="flex-1 min-w-0" />
           <button
             type="button"
@@ -121,19 +129,19 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
 
         {/* 页面导航 — 所有状态布局一致，仅文字被裁切 */}
         <nav className="space-y-0.5 pr-1.5">
-          {/* New Chat / 收起时作为展开按钮 */}
+          {/* New Chat */}
           <button
             type="button"
-            onClick={isCollapsed ? toggle : handleNewChat}
+            onClick={handleNewChat}
             className={cn(
               'flex items-center h-9 w-full rounded-lg transition-colors whitespace-nowrap overflow-hidden',
               ICON_PX,
               'text-muted-foreground hover:text-foreground hover:bg-accent'
             )}
-            aria-label={isCollapsed ? t.sidebar.expand : t.sidebar.newChat}
+            aria-label={t.sidebar.newChat}
           >
             <div className="w-9 h-9 shrink-0 flex items-center justify-center">
-              {isCollapsed ? <PanelLeft className="h-4 w-4" /> : <SquarePen className="h-4 w-4" />}
+              <SquarePen className="h-4 w-4" />
             </div>
             <span className={cn(
               'text-sm transition-opacity duration-200',
