@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit",
     "dev:web": "cd web && bun run dev",
     "dev:tauri": "bun tauri dev",
-    "build:sidecar": "node scripts/build-sidecar.mjs",
+    "build:sidecar": "bun scripts/build-sidecar.mjs",
     "build:tauri": "bun run build:sidecar && bun tauri build",
     "test": "bun test",
     "test:e2e": "npx playwright test --config e2e/playwright.config.ts",
