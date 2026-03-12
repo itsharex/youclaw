@@ -1,0 +1,129 @@
+import { z } from 'zod/v4'
+
+// ===== 各 Channel 类型的配置 Schema =====
+
+export const TelegramConfigSchema = z.object({
+  botToken: z.string().min(1),
+})
+
+export const FeishuConfigSchema = z.object({
+  appId: z.string().min(1),
+  appSecret: z.string().min(1),
+})
+
+export const QQConfigSchema = z.object({
+  botAppId: z.string().min(1),
+  botSecret: z.string().min(1),
+})
+
+// ===== 配置字段描述 =====
+
+export interface ConfigFieldInfo {
+  key: string
+  label: string
+  placeholder: string
+  secret: boolean
+}
+
+// ===== Channel 类型元信息 =====
+
+export interface ChannelTypeInfo {
+  type: string
+  label: string
+  description: string
+  chatIdPrefix: string
+  configFields: ConfigFieldInfo[]
+  docsUrl: string
+  configSchema: z.ZodType
+}
+
+export const CHANNEL_TYPE_REGISTRY: Record<string, ChannelTypeInfo> = {
+  telegram: {
+    type: 'telegram',
+    label: 'Telegram',
+    description: 'Telegram Bot API (Long Polling)',
+    chatIdPrefix: 'tg:',
+    configFields: [
+      { key: 'botToken', label: 'Bot Token', placeholder: '123456:ABC-DEF...', secret: true },
+    ],
+    docsUrl: 'https://core.telegram.org/bots',
+    configSchema: TelegramConfigSchema,
+  },
+  feishu: {
+    type: 'feishu',
+    label: 'Feishu / Lark',
+    description: 'Feishu Bot (WebSocket Long Connection)',
+    chatIdPrefix: 'feishu:',
+    configFields: [
+      { key: 'appId', label: 'App ID', placeholder: 'cli_xxxxx', secret: false },
+      { key: 'appSecret', label: 'App Secret', placeholder: '', secret: true },
+    ],
+    docsUrl: 'https://open.feishu.cn',
+    configSchema: FeishuConfigSchema,
+  },
+  qq: {
+    type: 'qq',
+    label: 'QQ',
+    description: 'QQ Bot API',
+    chatIdPrefix: 'qq:',
+    configFields: [
+      { key: 'botAppId', label: 'Bot App ID', placeholder: '', secret: false },
+      { key: 'botSecret', label: 'Bot Secret', placeholder: '', secret: true },
+    ],
+    docsUrl: 'https://q.qq.com',
+    configSchema: QQConfigSchema,
+  },
+}
+
+/**
+ * 根据 chatId 前缀推断 channel 类型
+ * 遍历注册表的 chatIdPrefix 匹配
+ */
+export function inferChannelType(chatId: string): string {
+  for (const info of Object.values(CHANNEL_TYPE_REGISTRY)) {
+    if (chatId.startsWith(info.chatIdPrefix)) {
+      return info.type
+    }
+  }
+  return 'web'
+}
+
+/**
+ * 根据 channel 类型校验 config 对象
+ */
+export function validateChannelConfig(type: string, config: unknown): { success: true; data: Record<string, unknown> } | { success: false; error: string } {
+  const typeInfo = CHANNEL_TYPE_REGISTRY[type]
+  if (!typeInfo) {
+    return { success: false, error: `未知的 channel 类型: ${type}` }
+  }
+
+  const result = typeInfo.configSchema.safeParse(config)
+  if (!result.success) {
+    return { success: false, error: result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') }
+  }
+
+  return { success: true, data: result.data as Record<string, unknown> }
+}
+
+/**
+ * 隐藏 config 中的 secret 字段（GET 响应用）
+ */
+export function maskSecretFields(type: string, config: Record<string, unknown>): { masked: Record<string, string>; configuredFields: string[] } {
+  const typeInfo = CHANNEL_TYPE_REGISTRY[type]
+  const masked: Record<string, string> = {}
+  const configuredFields: string[] = []
+
+  if (!typeInfo) return { masked, configuredFields }
+
+  for (const field of typeInfo.configFields) {
+    const val = config[field.key]
+    if (val && typeof val === 'string' && val.length > 0) {
+      configuredFields.push(field.key)
+      masked[field.key] = field.secret ? '' : val
+    } else {
+      masked[field.key] = ''
+    }
+  }
+
+  return { masked, configuredFields }
+}

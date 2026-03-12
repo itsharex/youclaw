@@ -39,6 +39,10 @@ export class MessageRouter {
     this.channels.push(channel)
   }
 
+  removeChannel(name: string) {
+    this.channels = this.channels.filter((ch) => ch.name !== name)
+  }
+
   // 处理入站消息（从任何 channel 进来）
   async handleInbound(message: InboundMessage): Promise<void> {
     const logger = getLogger()

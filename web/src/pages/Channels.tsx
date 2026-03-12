@@ -1,18 +1,24 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Radio, CheckCircle, Save, Eye, EyeOff,
-  ExternalLink, RefreshCw, AlertTriangle,
+  ExternalLink, RefreshCw, Plus, Trash2,
+  Power, PowerOff, AlertTriangle,
 } from 'lucide-react'
-import { getChannels, updateChannelEnv } from '../api/client'
-import type { ChannelDefinition } from '../api/client'
+import {
+  getChannels, getChannelTypes, createChannel,
+  updateChannel, deleteChannel, connectChannel, disconnectChannel,
+} from '../api/client'
+import type { ChannelInstance, ChannelTypeInfo } from '../api/client'
 import { cn } from '../lib/utils'
 import { useI18n } from '../i18n'
 
 export function Channels() {
   const { t } = useI18n()
-  const [channels, setChannels] = useState<ChannelDefinition[]>([])
+  const [channels, setChannels] = useState<ChannelInstance[]>([])
+  const [channelTypes, setChannelTypes] = useState<ChannelTypeInfo[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
 
   const fetchChannels = useCallback(() => {
     getChannels()
@@ -25,6 +31,7 @@ export function Channels() {
 
   useEffect(() => {
     fetchChannels()
+    getChannelTypes().then(setChannelTypes).catch(() => {})
     const interval = setInterval(fetchChannels, 5000)
     return () => clearInterval(interval)
   }, [fetchChannels])
@@ -37,13 +44,22 @@ export function Channels() {
       <div className="w-[260px] border-r border-border flex flex-col">
         <div className="p-3 border-b border-border flex items-center justify-between">
           <h2 className="font-semibold text-sm">{t.channels.title}</h2>
-          <button
-            onClick={fetchChannels}
-            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
-            title={t.channels.refresh}
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowCreate(true)}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+              title={t.channels.addChannel}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={fetchChannels}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+              title={t.channels.refresh}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {channels.map((ch) => (
@@ -62,14 +78,14 @@ export function Channels() {
                   'w-8 h-8 rounded-full flex items-center justify-center shrink-0',
                   ch.connected
                     ? 'bg-green-500/20 text-green-400'
-                    : ch.configured
+                    : ch.enabled
                       ? 'bg-yellow-500/20 text-yellow-400'
                       : 'bg-zinc-500/20 text-zinc-400',
                 )}
               >
                 {ch.connected ? (
                   <CheckCircle className="h-4 w-4" />
-                ) : ch.configured ? (
+                ) : ch.enabled && ch.error ? (
                   <AlertTriangle className="h-4 w-4" />
                 ) : (
                   <Radio className="h-4 w-4" />
@@ -80,23 +96,45 @@ export function Channels() {
                 <div className="text-xs text-muted-foreground truncate">
                   {ch.connected
                     ? t.channels.connected
-                    : ch.configured
-                      ? t.channels.needsRestart
-                      : t.channels.notConfigured}
+                    : !ch.enabled
+                      ? t.channels.disabled
+                      : ch.error
+                        ? t.channels.error
+                        : t.channels.disconnected}
                 </div>
               </div>
             </button>
           ))}
+          {channels.length === 0 && !loading && (
+            <div className="text-center text-xs text-muted-foreground py-8">
+              {t.channels.noChannels}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 右侧：详情 + 配置 */}
+      {/* 右侧：详情 / 创建 */}
       <div className="flex-1 overflow-y-auto">
-        {selectedChannel ? (
+        {showCreate ? (
+          <CreateChannelForm
+            t={t}
+            types={channelTypes}
+            onCreated={() => {
+              setShowCreate(false)
+              fetchChannels()
+            }}
+            onCancel={() => setShowCreate(false)}
+          />
+        ) : selectedChannel ? (
           <ChannelDetail
             t={t}
             channel={selectedChannel}
-            onEnvSaved={fetchChannels}
+            typeInfo={channelTypes.find((ct) => ct.type === selectedChannel.type)}
+            onUpdated={fetchChannels}
+            onDeleted={() => {
+              setSelected(null)
+              fetchChannels()
+            }}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -111,16 +149,193 @@ export function Channels() {
   )
 }
 
+// === 创建 Channel 表单 ===
+function CreateChannelForm({
+  t,
+  types,
+  onCreated,
+  onCancel,
+}: {
+  t: ReturnType<typeof useI18n>['t']
+  types: ChannelTypeInfo[]
+  onCreated: () => void
+  onCancel: () => void
+}) {
+  const [selectedType, setSelectedType] = useState('')
+  const [id, setId] = useState('')
+  const [label, setLabel] = useState('')
+  const [configValues, setConfigValues] = useState<Record<string, string>>({})
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
+
+  const typeInfo = types.find((t) => t.type === selectedType)
+
+  useEffect(() => {
+    if (typeInfo) {
+      setLabel(typeInfo.label)
+      setConfigValues({})
+    }
+  }, [selectedType])
+
+  const handleCreate = async () => {
+    if (!selectedType) return
+    setCreating(true)
+    setError('')
+    try {
+      await createChannel({
+        id: id || undefined,
+        type: selectedType,
+        label,
+        config: configValues,
+      })
+      onCreated()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="p-6 max-w-2xl space-y-5">
+      <h1 className="text-xl font-semibold">{t.channels.addChannel}</h1>
+
+      {/* 选择类型 */}
+      <div>
+        <label className="text-xs font-medium mb-1.5 block">{t.channels.channelType}</label>
+        <select
+          value={selectedType}
+          onChange={(e) => setSelectedType(e.target.value)}
+          className="w-full px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          <option value="">{t.channels.selectType}</option>
+          {types.map((ct) => (
+            <option key={ct.type} value={ct.type}>{ct.label} - {ct.description}</option>
+          ))}
+        </select>
+      </div>
+
+      {typeInfo && (
+        <>
+          {/* ID */}
+          <div>
+            <label className="text-xs font-medium mb-1.5 block">ID</label>
+            <input
+              value={id}
+              onChange={(e) => setId(e.target.value)}
+              placeholder={`${selectedType}-main`}
+              className="w-full px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <p className="text-xs text-muted-foreground mt-1">{t.channels.idHint}</p>
+          </div>
+
+          {/* Label */}
+          <div>
+            <label className="text-xs font-medium mb-1.5 block">{t.channels.labelField}</label>
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+
+          {/* 配置字段 */}
+          {typeInfo.configFields.map((field) => (
+            <div key={field.key}>
+              <label className="text-xs font-medium mb-1.5 block">{field.label}</label>
+              <input
+                type={field.secret ? 'password' : 'text'}
+                value={configValues[field.key] ?? ''}
+                onChange={(e) => setConfigValues({ ...configValues, [field.key]: e.target.value })}
+                placeholder={field.placeholder}
+                className="w-full px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+          ))}
+        </>
+      )}
+
+      {error && (
+        <div className="text-sm text-red-400">{error}</div>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          onClick={handleCreate}
+          disabled={creating || !selectedType}
+          className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+        >
+          {creating ? t.channels.creating : t.common.create}
+        </button>
+        <button
+          onClick={onCancel}
+          className="px-4 py-2 text-sm rounded-md border border-border text-muted-foreground hover:bg-accent/50 transition-colors"
+        >
+          {t.common.cancel}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // === Channel 详情视图 ===
 function ChannelDetail({
   t,
   channel,
-  onEnvSaved,
+  typeInfo,
+  onUpdated,
+  onDeleted,
 }: {
   t: ReturnType<typeof useI18n>['t']
-  channel: ChannelDefinition
-  onEnvSaved: () => void
+  channel: ChannelInstance
+  typeInfo?: ChannelTypeInfo
+  onUpdated: () => void
+  onDeleted: () => void
 }) {
+  const [actionLoading, setActionLoading] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const handleConnect = async () => {
+    setActionLoading('connect')
+    try {
+      await connectChannel(channel.id)
+      onUpdated()
+    } catch {} finally {
+      setActionLoading('')
+    }
+  }
+
+  const handleDisconnect = async () => {
+    setActionLoading('disconnect')
+    try {
+      await disconnectChannel(channel.id)
+      onUpdated()
+    } catch {} finally {
+      setActionLoading('')
+    }
+  }
+
+  const handleDelete = async () => {
+    setActionLoading('delete')
+    try {
+      await deleteChannel(channel.id)
+      onDeleted()
+    } catch {} finally {
+      setActionLoading('')
+      setConfirmDelete(false)
+    }
+  }
+
+  const handleToggleEnabled = async () => {
+    setActionLoading('toggle')
+    try {
+      await updateChannel(channel.id, { enabled: !channel.enabled })
+      onUpdated()
+    } catch {} finally {
+      setActionLoading('')
+    }
+  }
+
   return (
     <div className="p-6 max-w-2xl space-y-6">
       {/* 头部 */}
@@ -142,21 +357,87 @@ function ChannelDetail({
           </div>
           <div>
             <h1 className="text-xl font-semibold">{channel.label}</h1>
-            <p className="text-sm text-muted-foreground">{channel.description}</p>
+            <p className="text-sm text-muted-foreground font-mono">{channel.id}</p>
           </div>
         </div>
-        {channel.docsUrl && (
-          <a
-            href={channel.docsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+        <div className="flex items-center gap-2">
+          {channel.docsUrl && (
+            <a
+              href={channel.docsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              {t.channels.docs}
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* 操作按钮 */}
+      <div className="flex gap-2 flex-wrap">
+        {channel.connected ? (
+          <button
+            onClick={handleDisconnect}
+            disabled={!!actionLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10 transition-colors disabled:opacity-50"
           >
-            <ExternalLink className="h-3.5 w-3.5" />
-            {t.channels.docs}
-          </a>
+            <PowerOff className="h-3.5 w-3.5" />
+            {t.channels.disconnect}
+          </button>
+        ) : (
+          <button
+            onClick={handleConnect}
+            disabled={!!actionLoading || !channel.enabled}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-green-500/30 text-green-400 hover:bg-green-500/10 transition-colors disabled:opacity-50"
+          >
+            <Power className="h-3.5 w-3.5" />
+            {t.channels.connect}
+          </button>
+        )}
+        <button
+          onClick={handleToggleEnabled}
+          disabled={!!actionLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-border text-muted-foreground hover:bg-accent/50 transition-colors disabled:opacity-50"
+        >
+          {channel.enabled ? t.channels.disable : t.channels.enable}
+        </button>
+        {!confirmDelete ? (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors ml-auto"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t.common.delete}
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="text-xs text-red-400">{t.channels.confirmDelete}</span>
+            <button
+              onClick={handleDelete}
+              disabled={!!actionLoading}
+              className="px-3 py-1.5 text-xs rounded-md bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50"
+            >
+              {t.common.delete}
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="px-3 py-1.5 text-xs rounded-md border border-border text-muted-foreground hover:bg-accent/50 transition-colors"
+            >
+              {t.common.cancel}
+            </button>
+          </div>
         )}
       </div>
+
+      {/* 错误信息 */}
+      {channel.error && (
+        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 flex items-start gap-3">
+          <AlertTriangle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+          <div className="text-sm text-red-400">{channel.error}</div>
+        </div>
+      )}
 
       {/* 状态信息 */}
       <div className="grid grid-cols-2 gap-3">
@@ -165,42 +446,35 @@ function ChannelDetail({
           value={
             channel.connected
               ? t.channels.connected
-              : channel.configured
-                ? t.channels.needsRestart
-                : t.channels.notConfigured
+              : !channel.enabled
+                ? t.channels.disabled
+                : t.channels.disconnected
           }
-          color={channel.connected ? 'green' : channel.configured ? 'yellow' : 'zinc'}
+          color={channel.connected ? 'green' : !channel.enabled ? 'zinc' : 'yellow'}
         />
         <InfoCard
           label={t.channels.chatIdPrefix}
-          value={channel.chatIdPrefix}
+          value={channel.chatIdPrefix || '-'}
           mono
         />
       </div>
 
-      {/* 环境变量配置 */}
-      <div>
-        <h2 className="text-sm font-semibold mb-3">{t.channels.configuration}</h2>
-        <div className="space-y-3">
-          {channel.envKeys.map((envKey) => (
-            <EnvKeyEditor
-              key={envKey.key}
-              t={t}
-              envKey={envKey}
-              envValue={channel.envValues[envKey.key]}
-              onSaved={onEnvSaved}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* 重启提示 */}
-      {channel.configured && !channel.connected && (
-        <div className="rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3 flex items-start gap-3">
-          <AlertTriangle className="h-4 w-4 text-yellow-400 shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <p className="font-medium text-yellow-400">{t.channels.restartRequired}</p>
-            <p className="text-muted-foreground text-xs mt-1">{t.channels.restartHint}</p>
+      {/* 配置编辑 */}
+      {typeInfo && (
+        <div>
+          <h2 className="text-sm font-semibold mb-3">{t.channels.configuration}</h2>
+          <div className="space-y-3">
+            {typeInfo.configFields.map((field) => (
+              <ConfigFieldEditor
+                key={field.key}
+                t={t}
+                channelId={channel.id}
+                field={field}
+                currentValue={channel.config[field.key] ?? ''}
+                isConfigured={channel.configuredFields.includes(field.key)}
+                onSaved={onUpdated}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -208,16 +482,20 @@ function ChannelDetail({
   )
 }
 
-// === 单个环境变量编辑器 ===
-function EnvKeyEditor({
+// === 单个配置字段编辑器 ===
+function ConfigFieldEditor({
   t,
-  envKey,
-  envValue,
+  channelId,
+  field,
+  currentValue,
+  isConfigured,
   onSaved,
 }: {
   t: ReturnType<typeof useI18n>['t']
-  envKey: { key: string; label: string; placeholder: string; secret: boolean }
-  envValue?: { value: string; configured: boolean }
+  channelId: string
+  field: { key: string; label: string; placeholder: string; secret: boolean }
+  currentValue: string
+  isConfigured: boolean
   onSaved: () => void
 }) {
   const [value, setValue] = useState('')
@@ -225,20 +503,17 @@ function EnvKeyEditor({
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  // 初始化值
   useEffect(() => {
-    if (envValue && !envKey.secret) {
-      setValue(envValue.value)
-    } else {
-      setValue('')
-    }
-  }, [envKey.key, envKey.secret, envValue])
+    setValue(field.secret ? '' : currentValue)
+  }, [field.key, field.secret, currentValue])
 
   const handleSave = async () => {
     if (!value.trim()) return
     setSaving(true)
     try {
-      await updateChannelEnv(envKey.key, value.trim())
+      await updateChannel(channelId, {
+        config: { [field.key]: value.trim() },
+      })
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
       onSaved()
@@ -249,14 +524,12 @@ function EnvKeyEditor({
     }
   }
 
-  const isConfigured = envValue?.configured ?? false
-
   return (
     <div className="rounded-md border border-border p-3">
       <div className="flex items-center justify-between mb-2">
         <label className="text-xs font-medium">
-          {envKey.label}
-          <span className="text-muted-foreground ml-1.5 font-mono">{envKey.key}</span>
+          {field.label}
+          <span className="text-muted-foreground ml-1.5 font-mono">{field.key}</span>
         </label>
         {isConfigured && (
           <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/15 text-green-400">
@@ -267,17 +540,17 @@ function EnvKeyEditor({
       <div className="flex gap-2">
         <div className="relative flex-1">
           <input
-            type={envKey.secret && !showSecret ? 'password' : 'text'}
+            type={field.secret && !showSecret ? 'password' : 'text'}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder={
-              envKey.secret && isConfigured
+              field.secret && isConfigured
                 ? t.channels.secretConfigured
-                : envKey.placeholder || envKey.key
+                : field.placeholder || field.key
             }
             className="w-full px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring pr-10"
           />
-          {envKey.secret && (
+          {field.secret && (
             <button
               type="button"
               onClick={() => setShowSecret(!showSecret)}

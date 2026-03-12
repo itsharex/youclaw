@@ -6,7 +6,7 @@ import { initLogger, getLogger } from './logger/index.ts'
 import { initDatabase, createTask, updateTask, deleteTask, getTasks, getTask } from './db/index.ts'
 import { EventBus } from './events/index.ts'
 import { AgentManager, AgentQueue, PromptBuilder, AgentCompiler, AgentRouter, HooksManager, SecretsManager } from './agent/index.ts'
-import { MessageRouter, TelegramChannel, FeishuChannel } from './channel/index.ts'
+import { MessageRouter, ChannelManager } from './channel/index.ts'
 import { SkillsLoader, SkillsWatcher, RegistryManager } from './skills/index.ts'
 import { MemoryManager, MemoryIndexer } from './memory/index.ts'
 import { Scheduler } from './scheduler/index.ts'
@@ -83,35 +83,10 @@ async function main() {
   // 12. 创建 MessageRouter（带 MemoryManager）
   const router = new MessageRouter(agentManager, agentQueue, eventBus, memoryManager, skillsLoader)
 
-  // 13. 如果有 TELEGRAM_BOT_TOKEN，创建 TelegramChannel 并连接
-  if (env.TELEGRAM_BOT_TOKEN) {
-    const telegramChannel = new TelegramChannel(env.TELEGRAM_BOT_TOKEN, {
-      onMessage: (message) => router.handleInbound(message),
-    })
-    router.addChannel(telegramChannel)
-
-    telegramChannel.connect().catch((err) => {
-      logger.error({ error: err }, 'Telegram 连接失败')
-    })
-    logger.info('Telegram channel 已配置')
-  } else {
-    logger.info('未配置 TELEGRAM_BOT_TOKEN，跳过 Telegram channel')
-  }
-
-  // 13b. 如果有 FEISHU_APP_ID + FEISHU_APP_SECRET，创建 FeishuChannel 并连接
-  if (env.FEISHU_APP_ID && env.FEISHU_APP_SECRET) {
-    const feishuChannel = new FeishuChannel(env.FEISHU_APP_ID, env.FEISHU_APP_SECRET, {
-      onMessage: (message) => router.handleInbound(message),
-    })
-    router.addChannel(feishuChannel)
-
-    feishuChannel.connect().catch((err) => {
-      logger.error({ error: err }, '飞书连接失败')
-    })
-    logger.info('飞书 channel 已配置')
-  } else {
-    logger.info('未配置 FEISHU_APP_ID/FEISHU_APP_SECRET，跳过飞书 channel')
-  }
+  // 13. 创建 ChannelManager 并加载 channels
+  const channelManager = new ChannelManager(router, (msg) => router.handleInbound(msg))
+  await channelManager.seedFromEnv(env)     // 首次启动从 env 迁移
+  await channelManager.loadFromDatabase()   // 加载并连接所有 enabled channel
 
   // 14. 创建 Scheduler 并启动
   const scheduler = new Scheduler(agentQueue, agentManager, eventBus)
@@ -197,7 +172,7 @@ async function main() {
   }
 
   // 17. 创建 HTTP 服务
-  const app = createApp({ agentManager, agentQueue, eventBus, router, skillsLoader, registryManager, memoryManager, memoryIndexer, scheduler })
+  const app = createApp({ agentManager, agentQueue, eventBus, router, channelManager, skillsLoader, registryManager, memoryManager, memoryIndexer, scheduler })
 
   const server = Bun.serve({
     fetch: app.fetch,
@@ -208,8 +183,9 @@ async function main() {
   logger.info('YouClaw 已就绪')
 
   // 18. 优雅关闭
-  const shutdown = () => {
+  const shutdown = async () => {
     logger.info('正在关闭...')
+    await channelManager.disconnectAll()
     skillsWatcher.stop()
     ipcWatcher.stop()
     scheduler.stop()

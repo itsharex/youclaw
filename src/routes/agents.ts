@@ -4,6 +4,7 @@ import { resolve, basename } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { getPaths } from '../config/index.ts'
 import type { AgentManager } from '../agent/index.ts'
+import { DEFAULT_WORKSPACE_DOCS, DEFAULT_MEMORY_MD } from '../agent/index.ts'
 
 // 允许通过 API 读写的工作空间文档
 const ALLOWED_DOCS = ['SOUL.md', 'AGENT.md', 'USER.md', 'TOOLS.md']
@@ -156,20 +157,13 @@ export function createAgentsRoutes(agentManager: AgentManager) {
 
     writeFileSync(resolve(agentDir, 'agent.yaml'), stringifyYaml(config))
 
-    // 从 default agent 复制模板文件，若不存在则创建空文件
-    const defaultDir = resolve(paths.agents, 'default')
-
+    // 从内置模板初始化工作空间文档
     for (const filename of ALLOWED_DOCS) {
-      const defaultFilePath = resolve(defaultDir, filename)
       const targetFilePath = resolve(agentDir, filename)
-
-      if (existsSync(defaultFilePath)) {
-        const content = readFileSync(defaultFilePath, 'utf-8')
-        writeFileSync(targetFilePath, content)
-      } else {
-        writeFileSync(targetFilePath, `# ${basename(filename, '.md')}\n`)
-      }
+      const content = DEFAULT_WORKSPACE_DOCS[filename] ?? `# ${basename(filename, '.md')}\n`
+      writeFileSync(targetFilePath, content)
     }
+    writeFileSync(resolve(agentDir, 'memory', 'MEMORY.md'), DEFAULT_MEMORY_MD)
 
     // 重新加载 agents
     await agentManager.reloadAgents()

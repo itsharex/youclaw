@@ -396,32 +396,83 @@ export async function getLogEntries(date: string, params?: {
 
 // ===== Channels API =====
 
-export interface ChannelEnvKey {
+export interface ConfigFieldInfo {
   key: string
   label: string
   placeholder: string
   secret: boolean
 }
 
-export interface ChannelDefinition {
-  id: string
+export interface ChannelTypeInfo {
+  type: string
   label: string
   description: string
   chatIdPrefix: string
-  envKeys: ChannelEnvKey[]
+  configFields: ConfigFieldInfo[]
+  docsUrl: string
+}
+
+export interface ChannelInstance {
+  id: string
+  type: string
+  label: string
+  chatIdPrefix: string
   docsUrl: string
   connected: boolean
-  configured: boolean
-  envValues: Record<string, { value: string; configured: boolean }>
+  enabled: boolean
+  config: Record<string, string>
+  configuredFields: string[]
+  error?: string
+  created_at: string
+  updated_at: string
 }
 
 export async function getChannels() {
-  return apiFetch<ChannelDefinition[]>('/api/channels')
+  return apiFetch<ChannelInstance[]>('/api/channels')
 }
 
-export async function updateChannelEnv(key: string, value: string) {
-  return apiFetch<{ ok: boolean; needsRestart: boolean }>('/api/channels/env', {
+export async function getChannelTypes() {
+  return apiFetch<ChannelTypeInfo[]>('/api/channels/types')
+}
+
+export async function createChannel(data: {
+  id?: string
+  type: string
+  label: string
+  config: Record<string, string>
+  enabled?: boolean
+}) {
+  return apiFetch<ChannelInstance>('/api/channels', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function updateChannel(id: string, data: {
+  label?: string
+  config?: Record<string, string>
+  enabled?: boolean
+}) {
+  return apiFetch<ChannelInstance>(`/api/channels/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    body: JSON.stringify({ key, value }),
+    body: JSON.stringify(data),
+  })
+}
+
+export async function deleteChannel(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/channels/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function connectChannel(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/channels/${encodeURIComponent(id)}/connect`, {
+    method: 'POST',
+  })
+}
+
+export async function disconnectChannel(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/channels/${encodeURIComponent(id)}/disconnect`, {
+    method: 'POST',
   })
 }

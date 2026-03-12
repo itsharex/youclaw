@@ -1,128 +1,144 @@
 import { Hono } from 'hono'
 import { z } from 'zod/v4'
-import { resolve } from 'node:path'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { ROOT_DIR } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
-import type { MessageRouter } from '../channel/index.ts'
+import { CHANNEL_TYPE_REGISTRY, maskSecretFields } from '../channel/config-schema.ts'
+import type { ChannelManager } from '../channel/manager.ts'
+import { getChannelRecords, getChannelRecord } from '../db/index.ts'
 
-/**
- * Channel 定义：所有支持的 channel 元信息
- * 后续新增 channel 只需在这里加一条
- */
-const CHANNEL_DEFINITIONS = [
-  {
-    id: 'telegram',
-    label: 'Telegram',
-    description: 'Telegram Bot API (Long Polling)',
-    chatIdPrefix: 'tg:',
-    envKeys: [
-      { key: 'TELEGRAM_BOT_TOKEN', label: 'Bot Token', placeholder: '123456:ABC-DEF...', secret: true },
-    ],
-    docsUrl: 'https://core.telegram.org/bots',
-  },
-  {
-    id: 'feishu',
-    label: 'Feishu / Lark',
-    description: 'Feishu Bot (WebSocket Long Connection)',
-    chatIdPrefix: 'feishu:',
-    envKeys: [
-      { key: 'FEISHU_APP_ID', label: 'App ID', placeholder: 'cli_xxxxx', secret: false },
-      { key: 'FEISHU_APP_SECRET', label: 'App Secret', placeholder: '', secret: true },
-    ],
-    docsUrl: 'https://open.feishu.cn',
-  },
-  {
-    id: 'qq',
-    label: 'QQ',
-    description: 'QQ Bot API',
-    chatIdPrefix: 'qq:',
-    envKeys: [
-      { key: 'QQ_BOT_APPID', label: 'Bot App ID', placeholder: '', secret: false },
-      { key: 'QQ_BOT_SECRET', label: 'Bot Secret', placeholder: '', secret: true },
-    ],
-    docsUrl: 'https://q.qq.com',
-  },
-] as const
-
-const updateEnvSchema = z.object({
-  key: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
-  value: z.string(),
+const createChannelSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/).optional(),
+  type: z.string().min(1),
+  label: z.string().min(1),
+  config: z.record(z.string(), z.unknown()),
+  enabled: z.boolean().optional(),
 })
 
-export function createChannelsRoutes(router: MessageRouter) {
+const updateChannelSchema = z.object({
+  label: z.string().min(1).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  enabled: z.boolean().optional(),
+})
+
+export function createChannelsRoutes(channelManager: ChannelManager) {
   const channels = new Hono()
 
-  // GET /api/channels — 列出所有 channel（含定义 + 运行时状态 + 配置值）
+  // GET /api/channels — 列出所有 channel 实例（含运行时状态）
   channels.get('/channels', (c) => {
-    const statuses = router.getChannelStatuses()
-    const statusMap = new Map(statuses.map((s) => [s.name, s.connected]))
+    const statuses = channelManager.getStatuses()
+    const records = getChannelRecords()
 
-    const result = CHANNEL_DEFINITIONS.map((def) => {
-      // 读取当前环境变量值（secret 类型只返回是否已配置）
-      const envValues: Record<string, { value: string; configured: boolean }> = {}
-      for (const env of def.envKeys) {
-        const raw = process.env[env.key] ?? ''
-        envValues[env.key] = {
-          value: env.secret ? '' : raw,
-          configured: raw.length > 0,
-        }
-      }
+    const result = records.map((record) => {
+      const status = statuses.find((s) => s.id === record.id)
+      const config = JSON.parse(record.config) as Record<string, unknown>
+      const { masked, configuredFields } = maskSecretFields(record.type, config)
+      const typeInfo = CHANNEL_TYPE_REGISTRY[record.type]
 
       return {
-        ...def,
-        connected: statusMap.get(def.id) ?? false,
-        configured: def.envKeys.every((e) => (process.env[e.key] ?? '').length > 0),
-        envValues,
+        id: record.id,
+        type: record.type,
+        label: record.label,
+        chatIdPrefix: typeInfo?.chatIdPrefix ?? '',
+        docsUrl: typeInfo?.docsUrl ?? '',
+        connected: status?.connected ?? false,
+        enabled: !!record.enabled,
+        config: masked,
+        configuredFields,
+        error: status?.error,
+        created_at: record.created_at,
+        updated_at: record.updated_at,
       }
     })
 
     return c.json(result)
   })
 
-  // PUT /api/channels/env — 保存单个环境变量到 .env
-  channels.put('/channels/env', async (c) => {
+  // GET /api/channels/types — 列出支持的 channel 类型（元信息）
+  channels.get('/channels/types', (c) => {
+    const types = Object.values(CHANNEL_TYPE_REGISTRY).map((info) => ({
+      type: info.type,
+      label: info.label,
+      description: info.description,
+      chatIdPrefix: info.chatIdPrefix,
+      configFields: info.configFields,
+      docsUrl: info.docsUrl,
+    }))
+    return c.json(types)
+  })
+
+  // POST /api/channels — 创建 channel 实例
+  channels.post('/channels', async (c) => {
     const body = await c.req.json()
-    const parsed = updateEnvSchema.safeParse(body)
+    const parsed = createChannelSchema.safeParse(body)
     if (!parsed.success) {
-      return c.json({ error: 'Invalid parameters', details: parsed.error.issues }, 400)
+      return c.json({ error: '参数校验失败', details: parsed.error.issues }, 400)
     }
-
-    const { key, value } = parsed.data
-    const logger = getLogger()
-
-    // 校验 key 属于某个 channel 的 envKeys
-    const allKeys: string[] = CHANNEL_DEFINITIONS.flatMap((d) => d.envKeys.map((e) => e.key))
-    if (!allKeys.includes(key)) {
-      return c.json({ error: `Unknown channel env key: ${key}` }, 400)
-    }
-
-    const envPath = resolve(ROOT_DIR, '.env')
 
     try {
-      let content = ''
-      try {
-        content = readFileSync(envPath, 'utf-8')
-      } catch {
-        // .env 不存在，创建空文件
-      }
-
-      const lineRegex = new RegExp(`^(#\\s*)?${key}\\s*=.*$`, 'm')
-      if (lineRegex.test(content)) {
-        content = content.replace(lineRegex, `${key}=${value}`)
-      } else {
-        content = content.trimEnd() + `\n${key}=${value}\n`
-      }
-
-      writeFileSync(envPath, content, 'utf-8')
-      process.env[key] = value
-
-      logger.info({ key }, 'Channel 环境变量已保存')
-      return c.json({ ok: true, needsRestart: true })
+      const record = await channelManager.createChannel(parsed.data)
+      return c.json(record, 201)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      logger.error({ key, error: msg }, '保存 Channel 环境变量失败')
+      return c.json({ error: msg }, 400)
+    }
+  })
+
+  // PUT /api/channels/:id — 更新配置（触发热重连）
+  channels.put('/channels/:id', async (c) => {
+    const id = c.req.param('id')
+    const body = await c.req.json()
+    const parsed = updateChannelSchema.safeParse(body)
+    if (!parsed.success) {
+      return c.json({ error: '参数校验失败', details: parsed.error.issues }, 400)
+    }
+
+    try {
+      const record = await channelManager.updateChannel(id, parsed.data)
+      return c.json(record)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const status = msg.includes('不存在') ? 404 : 400
+      return c.json({ error: msg }, status)
+    }
+  })
+
+  // DELETE /api/channels/:id — 删除（先断开）
+  channels.delete('/channels/:id', async (c) => {
+    const id = c.req.param('id')
+
+    if (!getChannelRecord(id)) {
+      return c.json({ error: `Channel "${id}" 不存在` }, 404)
+    }
+
+    try {
+      await channelManager.deleteChannel(id)
+      return c.json({ ok: true })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
       return c.json({ error: msg }, 500)
+    }
+  })
+
+  // POST /api/channels/:id/connect — 手动连接
+  channels.post('/channels/:id/connect', async (c) => {
+    const id = c.req.param('id')
+    try {
+      await channelManager.connectChannel(id)
+      return c.json({ ok: true })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return c.json({ error: msg }, 400)
+    }
+  })
+
+  // POST /api/channels/:id/disconnect — 手动断开
+  channels.post('/channels/:id/disconnect', async (c) => {
+    const id = c.req.param('id')
+    try {
+      await channelManager.disconnectChannel(id)
+      return c.json({ ok: true })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return c.json({ error: msg }, 400)
     }
   })
 

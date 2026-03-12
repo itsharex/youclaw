@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS browser_profiles (
   name TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS channels (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  label TEXT NOT NULL,
+  config TEXT NOT NULL DEFAULT '{}',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `
 
 // bun:sqlite 查询结果类型辅助
@@ -391,6 +401,73 @@ export function getBrowserProfile(id: string): BrowserProfile | null {
 export function deleteBrowserProfile(id: string): void {
   const db = getDatabase()
   db.run('DELETE FROM browser_profiles WHERE id = ?', [id])
+}
+
+// ===== Channel 操作 =====
+
+export interface ChannelRecord {
+  id: string
+  type: string
+  label: string
+  config: string        // JSON 字符串
+  enabled: number       // 0 | 1
+  created_at: string
+  updated_at: string
+}
+
+export function createChannelRecord(record: {
+  id: string
+  type: string
+  label: string
+  config: string
+  enabled?: boolean
+}): ChannelRecord {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+  db.run(
+    `INSERT INTO channels (id, type, label, config, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [record.id, record.type, record.label, record.config, record.enabled === false ? 0 : 1, now, now]
+  )
+  return getChannelRecord(record.id)!
+}
+
+export function getChannelRecords(): ChannelRecord[] {
+  const db = getDatabase()
+  return queryAll<ChannelRecord>(db, 'SELECT * FROM channels ORDER BY created_at ASC')
+}
+
+export function getChannelRecord(id: string): ChannelRecord | null {
+  const db = getDatabase()
+  return queryGet<ChannelRecord>(db, 'SELECT * FROM channels WHERE id = ?', id)
+}
+
+export function updateChannelRecord(id: string, updates: Partial<{
+  label: string
+  config: string
+  enabled: boolean
+}>): ChannelRecord | null {
+  const db = getDatabase()
+  const fields: string[] = []
+  const values: (string | number)[] = []
+
+  if (updates.label !== undefined) { fields.push('label = ?'); values.push(updates.label) }
+  if (updates.config !== undefined) { fields.push('config = ?'); values.push(updates.config) }
+  if (updates.enabled !== undefined) { fields.push('enabled = ?'); values.push(updates.enabled ? 1 : 0) }
+
+  if (fields.length === 0) return getChannelRecord(id)
+
+  fields.push('updated_at = ?')
+  values.push(new Date().toISOString())
+  values.push(id)
+
+  db.run(`UPDATE channels SET ${fields.join(', ')} WHERE id = ?`, values)
+  return getChannelRecord(id)
+}
+
+export function deleteChannelRecord(id: string): void {
+  const db = getDatabase()
+  db.run('DELETE FROM channels WHERE id = ?', [id])
 }
 
 // ===== Skill 设置 =====

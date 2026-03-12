@@ -23,3 +23,16 @@ export interface Channel {
 }
 
 export type OnInboundMessage = (message: InboundMessage) => void
+
+/**
+ * Channel 运行时状态
+ */
+export interface ChannelStatus {
+  id: string
+  type: string
+  label: string
+  connected: boolean
+  enabled: boolean
+  error?: string
+  configuredFields: string[]
+}

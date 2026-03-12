@@ -37,8 +37,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Runtime data
 data/
 
-# Agent memory logs (keep MEMORY.md template)
-agents/*/memory/logs/
+# Agent workspaces（运行时从内置模板自动生成）
+agents/
 
 # Playwright
 test-results/

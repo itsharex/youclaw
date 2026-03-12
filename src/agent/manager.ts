@@ -1,8 +1,9 @@
-import { readdirSync, readFileSync, existsSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
+import { inferChannelType } from '../channel/config-schema.ts'
 import type { EventBus } from '../events/index.ts'
 import { AgentConfigSchema } from './schema.ts'
 import { AgentRuntime } from './runtime.ts'
@@ -12,6 +13,10 @@ import type { HooksManager } from './hooks.ts'
 import type { AgentRouter } from './router.ts'
 import type { SecretsManager } from './secrets.ts'
 import type { AgentConfig, AgentInstance } from './types.ts'
+import {
+  DEFAULT_AGENT_YAML, DEFAULT_SOUL_MD, DEFAULT_AGENT_MD,
+  DEFAULT_USER_MD, DEFAULT_TOOLS_MD, DEFAULT_MEMORY_MD, GLOBAL_MEMORY_MD,
+} from './templates.ts'
 
 export class AgentManager {
   private agents: Map<string, AgentInstance> = new Map()
@@ -39,6 +44,36 @@ export class AgentManager {
   }
 
   /**
+   * 确保默认 agent 和全局记忆目录存在
+   * 以 agent.yaml 为哨兵文件，不存在则从内置模板初始化
+   */
+  ensureDefaultAgent(): void {
+    const logger = getLogger()
+    const paths = getPaths()
+    const defaultDir = resolve(paths.agents, 'default')
+    const globalDir = resolve(paths.agents, '_global')
+
+    if (!existsSync(resolve(defaultDir, 'agent.yaml'))) {
+      logger.info('初始化默认 agent 模板...')
+      mkdirSync(defaultDir, { recursive: true })
+      mkdirSync(resolve(defaultDir, 'memory'), { recursive: true })
+      mkdirSync(resolve(defaultDir, 'skills'), { recursive: true })
+      mkdirSync(resolve(defaultDir, 'prompts'), { recursive: true })
+      writeFileSync(resolve(defaultDir, 'agent.yaml'), DEFAULT_AGENT_YAML)
+      writeFileSync(resolve(defaultDir, 'SOUL.md'), DEFAULT_SOUL_MD)
+      writeFileSync(resolve(defaultDir, 'AGENT.md'), DEFAULT_AGENT_MD)
+      writeFileSync(resolve(defaultDir, 'USER.md'), DEFAULT_USER_MD)
+      writeFileSync(resolve(defaultDir, 'TOOLS.md'), DEFAULT_TOOLS_MD)
+      writeFileSync(resolve(defaultDir, 'memory', 'MEMORY.md'), DEFAULT_MEMORY_MD)
+    }
+
+    if (!existsSync(resolve(globalDir, 'memory', 'MEMORY.md'))) {
+      mkdirSync(resolve(globalDir, 'memory'), { recursive: true })
+      writeFileSync(resolve(globalDir, 'memory', 'MEMORY.md'), GLOBAL_MEMORY_MD)
+    }
+  }
+
+  /**
    * 从 agents/ 目录加载所有 agent
    * 扫描每个子目录的 agent.yaml，使用 Zod 校验配置并创建 AgentRuntime
    */
@@ -46,6 +81,9 @@ export class AgentManager {
     const logger = getLogger()
     const paths = getPaths()
     const agentsDir = paths.agents
+
+    // 确保默认 agent 存在
+    this.ensureDefaultAgent()
 
     if (!existsSync(agentsDir)) {
       logger.warn({ agentsDir }, 'agents 目录不存在')
@@ -163,7 +201,7 @@ export class AgentManager {
   resolveAgent(chatId: string): AgentInstance | undefined {
     // 优先使用 AgentRouter（如果已初始化）
     if (this.agentRouter) {
-      const channel = chatId.startsWith('tg:') ? 'telegram' : 'web'
+      const channel = inferChannelType(chatId)
       return this.agentRouter.resolve({
         channel,
         chatId,
