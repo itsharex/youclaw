@@ -1,4 +1,6 @@
 export type { Channel, InboundMessage, OnInboundMessage } from './types.ts'
 export { TelegramChannel } from './telegram.ts'
 export type { TelegramChannelOpts } from './telegram.ts'
+export { FeishuChannel } from './feishu.ts'
+export type { FeishuChannelOpts } from './feishu.ts'
 export { MessageRouter } from './router.ts'

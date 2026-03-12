@@ -48,6 +48,8 @@ const envSchema = z.object({
   AGENT_MODEL: z.string().default('claude-sonnet-4-6'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
+  FEISHU_APP_ID: z.string().optional(),
+  FEISHU_APP_SECRET: z.string().optional(),
 })
 
 export type EnvConfig = z.infer<typeof envSchema>
