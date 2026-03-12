@@ -3,6 +3,7 @@ import { useChatContext } from "@/hooks/useChatContext";
 import {
   PromptInput,
   PromptInputTextarea,
+  PromptInputHeader,
   PromptInputFooter,
   PromptInputTools,
   PromptInputSubmit,
@@ -15,9 +16,40 @@ import {
   PromptInputActionMenuTrigger,
   PromptInputActionMenuContent,
   PromptInputActionAddAttachments,
+  usePromptInputAttachments,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
+import {
+  Attachments,
+  Attachment,
+  AttachmentPreview,
+  AttachmentInfo,
+  AttachmentRemove,
+} from "@/components/ai-elements/attachments";
 import { Bot, Globe } from "lucide-react";
+
+// 输入框中的附件预览（textarea 上方）
+function AttachmentPreviews() {
+  const attachments = usePromptInputAttachments();
+  if (attachments.files.length === 0) return null;
+
+  return (
+    <PromptInputHeader>
+      <Attachments variant="grid" className="p-2 ml-0 w-full">
+        {attachments.files.map((file) => (
+          <Attachment
+            key={file.id}
+            data={{ ...file, id: file.id }}
+            onRemove={() => attachments.remove(file.id)}
+          >
+            <AttachmentPreview />
+            <AttachmentRemove />
+          </Attachment>
+        ))}
+      </Attachments>
+    </PromptInputHeader>
+  );
+}
 
 export function ChatInput() {
   const { t } = useI18n();
@@ -53,6 +85,7 @@ export function ChatInput() {
         maxFiles={5}
         maxFileSize={10 * 1024 * 1024}
       >
+          <AttachmentPreviews />
           <PromptInputTextarea
             placeholder={t.chat.placeholder}
             data-testid="chat-input"
