@@ -33,7 +33,6 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
   const isChatRoute = location.pathname === '/'
   const [platform, setPlatform] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-  const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => {
     if (isElectron) setPlatform(getElectronAPI().getPlatform())
@@ -113,7 +112,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
           </button>
           <button
             type="button"
-            onClick={() => { toggle(); setSearchOpen(true) }}
+            onClick={toggle}
             className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
             aria-label={t.sidebar.search}
           >
@@ -199,6 +198,8 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
 
         {/* 顶部操作栏 */}
         <div className="flex items-center gap-1.5 px-3 pt-2 pb-2">
+          <span className="text-sm font-semibold tracking-tight pl-1">YouClaw</span>
+          <div className="flex-1" />
           <button
             type="button"
             onClick={toggle}
@@ -206,15 +207,6 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
             aria-label={t.sidebar.collapse}
           >
             <PanelLeftClose className="h-4 w-4" />
-          </button>
-          <div className="flex-1" />
-          <button
-            type="button"
-            onClick={() => setSearchOpen(!searchOpen)}
-            className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
-            aria-label={t.sidebar.search}
-          >
-            <Search className="h-4 w-4" />
           </button>
           <button
             type="button"
@@ -225,20 +217,6 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
             <SquarePen className="h-4 w-4" />
           </button>
         </div>
-
-        {/* 搜索框（展开时内联） */}
-        {searchOpen && (
-          <div className="px-3 pb-2">
-            <input
-              type="text"
-              className="w-full bg-background border border-border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              placeholder={t.sidebar.search}
-              value={chatCtx.searchQuery}
-              onChange={e => chatCtx.setSearchQuery(e.target.value)}
-              autoFocus
-            />
-          </div>
-        )}
 
         {/* 页面导航 */}
         <nav className="px-2 pb-2 space-y-0.5">
@@ -282,7 +260,16 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
         {isChatRoute && (
           <>
             <div className="h-px bg-border mx-3" />
-            <div className="flex-1 overflow-y-auto px-2 py-2" role="listbox">
+            <div className="px-3 py-2">
+              <input
+                type="text"
+                className="w-full bg-background border border-border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder={t.sidebar.search}
+                value={chatCtx.searchQuery}
+                onChange={e => chatCtx.setSearchQuery(e.target.value)}
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto px-2 py-0" role="listbox">
               {chatGroups.length === 0 && (
                 <p className="text-xs text-muted-foreground px-2.5 py-4 text-center">{t.chat.noConversations}</p>
               )}
