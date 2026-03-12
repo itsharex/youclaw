@@ -174,8 +174,8 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
           ))}
         </nav>
 
-        {/* 会话列表（仅展开 + Chat 路由） */}
-        {!isCollapsed && isChatRoute && (
+        {/* 会话列表（展开时显示） */}
+        {!isCollapsed && (
           <>
             <div className="h-px bg-border mx-3 mt-2" />
             <div className="px-3 py-2">
@@ -236,8 +236,8 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
           </>
         )}
 
-        {/* 收起时 / 非 Chat 路由时填充空间 */}
-        {(isCollapsed || !isChatRoute) && <div className="flex-1" />}
+        {/* 收起时填充空间 */}
+        {isCollapsed && <div className="flex-1" />}
 
         {/* 底部 */}
         <div
