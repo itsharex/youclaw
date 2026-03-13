@@ -93,8 +93,21 @@ export class ChannelManager {
       logger.info('已从 env 迁移飞书 channel 配置到数据库')
     }
 
+    // 迁移 QQ
+    if (env.QQ_BOT_APP_ID && env.QQ_BOT_SECRET) {
+      createChannelRecord({
+        id: 'qq',
+        type: 'qq',
+        label: 'QQ',
+        config: JSON.stringify({ botAppId: env.QQ_BOT_APP_ID, botSecret: env.QQ_BOT_SECRET }),
+        enabled: true,
+      })
+      seeded = true
+      logger.info('已从 env 迁移 QQ channel 配置到数据库')
+    }
+
     if (seeded) {
-      logger.info('Channel 配置已迁移到数据库，后续可从环境变量中移除 TELEGRAM_BOT_TOKEN / FEISHU_APP_ID / FEISHU_APP_SECRET')
+      logger.info('Channel 配置已迁移到数据库，后续可从环境变量中移除 TELEGRAM_BOT_TOKEN / FEISHU_APP_ID / FEISHU_APP_SECRET / QQ_BOT_APP_ID / QQ_BOT_SECRET')
     }
   }
 

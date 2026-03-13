@@ -1,5 +1,6 @@
 import { TelegramChannel } from './telegram.ts'
 import { FeishuChannel } from './feishu.ts'
+import { QQChannel } from './qq.ts'
 import type { Channel, OnInboundMessage } from './types.ts'
 import type { ChannelRecord } from '../db/index.ts'
 import type { EventBus } from '../events/bus.ts'
@@ -19,6 +20,11 @@ export function createChannelFromRecord(record: ChannelRecord, onMessage: OnInbo
     }
     case 'feishu': {
       const channel = new FeishuChannel(config.appId!, config.appSecret!, { onMessage, eventBus })
+      channel.name = record.id
+      return channel
+    }
+    case 'qq': {
+      const channel = new QQChannel(config.botAppId!, config.botSecret!, { onMessage, eventBus })
       channel.name = record.id
       return channel
     }
