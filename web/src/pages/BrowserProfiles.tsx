@@ -42,8 +42,9 @@ export function BrowserProfiles() {
     try {
       await launchBrowserProfile(id)
       setLaunchMessage({ type: 'success', text: t.browser.launchSuccess })
-    } catch {
-      setLaunchMessage({ type: 'error', text: t.browser.launchFailed })
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : ''
+      setLaunchMessage({ type: 'error', text: detail || t.browser.launchFailed })
     } finally {
       setLaunchingId(null)
     }
