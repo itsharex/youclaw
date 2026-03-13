@@ -36,6 +36,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "externalBin": [
       "bin/youclaw-server"
