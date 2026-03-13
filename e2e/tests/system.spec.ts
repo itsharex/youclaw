@@ -2,8 +2,9 @@ import { test, expect } from '../fixtures'
 
 test.describe('系统状态', () => {
   test.beforeEach(async ({ page }) => {
-    await page.getByTestId('nav-system').click()
-    await page.waitForLoadState('networkidle')
+    await page.getByRole('button', { name: /settings/i }).click()
+    await page.getByRole('button', { name: /system/i }).click()
+    await page.waitForTimeout(500)
   })
 
   test('系统状态页面加载', async ({ page }) => {

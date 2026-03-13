@@ -50,10 +50,11 @@ export async function cleanupE2EProfiles(request: APIRequestContext) {
 
 // ===== UI 辅助函数 =====
 
-/** 导航到浏览器 Profile 页并等待加载 */
+/** 导航到浏览器 Profile 页：打开 Settings → 点击 Browser Tab */
 export async function navigateToBrowser(page: Page) {
-  await page.getByTestId('nav-browser').click()
-  await page.waitForLoadState('networkidle')
+  await page.getByRole('button', { name: /settings/i }).click()
+  await page.getByRole('button', { name: /browser/i }).click()
+  await page.waitForTimeout(500)
 }
 
 /** 通过 API 启动浏览器 Profile（不断言状态码） */

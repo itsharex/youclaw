@@ -12,9 +12,6 @@ test.describe('导航冒烟测试', () => {
       { testId: 'nav-agents', url: '/agents' },
       { testId: 'nav-cron', url: '/cron' },
       { testId: 'nav-memory', url: '/memory' },
-      { testId: 'nav-skills', url: '/skills' },
-      { testId: 'nav-logs', url: '/logs' },
-      { testId: 'nav-system', url: '/system' },
       { testId: 'nav-chat', url: '/' },
     ]
     for (const { testId, url } of routes) {

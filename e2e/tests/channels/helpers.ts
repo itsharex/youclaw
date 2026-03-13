@@ -73,8 +73,9 @@ export async function cleanupE2EChannels(request: APIRequestContext) {
 
 // ===== UI 辅助函数 =====
 
-/** 导航到 Channels 页并等待加载 */
+/** 导航到 Channels 页：打开 Settings → 点击 Channels Tab */
 export async function navigateToChannels(page: Page) {
-  await page.getByTestId('nav-channels').click()
-  await page.waitForLoadState('networkidle')
+  await page.getByRole('button', { name: /settings/i }).click()
+  await page.getByRole('button', { name: /channels/i }).click()
+  await page.waitForTimeout(500)
 }

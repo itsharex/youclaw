@@ -2,8 +2,9 @@ import { test, expect } from '../fixtures'
 
 test.describe('日志查看', () => {
   test.beforeEach(async ({ page }) => {
-    await page.getByTestId('nav-logs').click()
-    await page.waitForLoadState('networkidle')
+    await page.getByRole('button', { name: /settings/i }).click()
+    await page.getByRole('button', { name: /logs/i }).click()
+    await page.waitForTimeout(500)
   })
 
   test('日志页面加载', async ({ page }) => {
