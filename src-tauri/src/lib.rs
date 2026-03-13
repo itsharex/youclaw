@@ -239,11 +239,6 @@ pub fn run() {
             restart_sidecar,
         ])
         .setup(|app| {
-            // debug 模式自动打开 DevTools
-            if let Some(win) = app.get_webview_window("main") {
-                win.open_devtools();
-            }
-
             let handle = app.handle().clone();
 
             // 创建系统托盘
