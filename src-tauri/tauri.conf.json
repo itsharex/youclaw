@@ -54,7 +54,8 @@
       "nsis": {
         "displayLanguageSelector": false,
         "installMode": "both",
-        "languages": ["SimpChinese", "English"]
+        "languages": ["English", "SimpChinese"],
+        "installerIcon": "icons/icon.ico"
       }
     }
   },

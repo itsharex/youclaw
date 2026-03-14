@@ -181,8 +181,20 @@ fn kill_sidecar(app: &AppHandle) {
     let state = app.state::<SidecarState>();
     let mut guard = state.0.lock().unwrap();
     if let Some(child) = guard.take() {
-        let _ = child.kill();
-        log::info!("Sidecar process killed");
+        let pid = child.pid();
+        // Windows: use taskkill /T to kill entire process tree (including bun child processes)
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .output();
+            log::info!("Sidecar process tree killed (PID: {})", pid);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = child.kill();
+            log::info!("Sidecar process killed (PID: {})", pid);
+        }
     }
 }
 
