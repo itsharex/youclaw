@@ -44,7 +44,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     env_vars.push(("PORT".into(), port.to_string()));
 
     if let Ok(store) = app.store("settings.json") {
-        // 读取 active-model 配置，决定模型来源
+        // Read active-model config to determine model source
         let mut model_configured = false;
 
         if let Some(active_model) = store.get("active-model") {
@@ -52,7 +52,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
 
             match provider {
                 "builtin" => {
-                    // 内置模型：读取 builtin-model，映射到实际 model ID
+                    // Builtin model: read builtin-model and map to actual model ID
                     if let Some(builtin) = store.get("builtin-model") {
                         if let Some(builtin_id) = builtin.as_str() {
                             let actual_model = match builtin_id {
@@ -60,14 +60,13 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
                                 other => other,
                             };
                             env_vars.push(("AGENT_MODEL".into(), actual_model.to_string()));
-                            // 内置模型使用 YouClaw 默认 API（demo 占位）
-                            // TODO: 后续替换为 YouClaw 官方 API 端点
+                            // TODO: replace with YouClaw official API endpoint
                             model_configured = true;
                         }
                     }
                 }
                 "custom" => {
-                    // 自定义模型：从 custom-models 找到对应记录
+                    // Custom model: find matching record from custom-models
                     if let Some(custom_id) = active_model.get("id").and_then(|v| v.as_str()) {
                         if let Some(custom_models) = store.get("custom-models") {
                             if let Some(models) = custom_models.as_array() {
@@ -100,7 +99,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
             }
         }
 
-        // 兼容旧逻辑：如果 active-model 未配置，fallback 到原来的 api-key / base-url
+        // Fallback to legacy api-key / base-url if active-model is not configured
         if !model_configured {
             if let Some(api_key) = store.get("api-key") {
                 if let Some(key) = api_key.as_str() {
@@ -408,7 +407,7 @@ pub fn run() {
                 tauri::RunEvent::Exit => {
                     kill_sidecar(app);
                 }
-                // macOS: Re-show window when Dock icon is clicked
+                #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { has_visible_windows, .. } => {
                     if !has_visible_windows {
                         if let Some(win) = app.get_webview_window("main") {
