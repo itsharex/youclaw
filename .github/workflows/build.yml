@@ -165,7 +165,7 @@ jobs:
           TAG="${{ github.ref_name }}"
           REPO="${{ github.repository }}"
           mkdir -p unsigned
-          # 等待 release 创建完成
+          # Wait for release to be created
           for i in $(seq 1 30); do
             if gh release view "$TAG" -R "$REPO" > /dev/null 2>&1; then
               echo "Release found"
@@ -192,7 +192,7 @@ jobs:
           NSIS_ZIP="unsigned/You.Claw_${VERSION}_x64-setup.nsis.zip"
           EXE_PATH=$(ls unsigned/*.exe | head -1)
 
-          # 替换 zip 中的 exe 为签名后的版本
+          # Replace exe in zip with signed version
           if [ -f "$NSIS_ZIP" ]; then
             cd unsigned
             unzip -o "$(basename "$NSIS_ZIP")" -d nsis_tmp
@@ -232,8 +232,8 @@ jobs:
         run: rm -rf unsigned
 
   # ── Linux build ── [temporarily disabled]
-  # 启用时需要：1) 将 if 改为 true  2) 在 updater job 的 needs 中添加 build-linux
-  #             3) 在 updater job 的 if 条件中添加 build-linux.result == 'success'
+  # To enable: 1) set if to true  2) add build-linux to updater job's needs
+  #            3) add build-linux.result == 'success' to updater job's if condition
   build-linux:
     if: ${{ false }}
     runs-on: ubuntu-22.04
@@ -327,27 +327,25 @@ jobs:
           OSS_BASE="oss://${OSS_BUCKET}/releases/${TAG}"
           CDN_BASE="https://${OSS_BUCKET}.${OSS_ENDPOINT}/releases/${TAG}"
 
-          # 下载所有 release 产物（安装包 + 签名）
           mkdir -p assets
           gh release download "$TAG" -R "$REPO" --dir assets
 
           echo "=== Downloaded assets ==="
           ls -la assets/
 
-          # 上传所有产物到 OSS（版本目录 + latest 固定目录）
+          # Upload assets to OSS (versioned dir + latest dir)
           for f in assets/*; do
             [ ! -f "$f" ] && continue
             NAME=$(basename "$f")
-            # 跳过 tauri-action 生成的 latest.json，用我们自己生成的
+            # Skip tauri-action's latest.json, we generate our own
             [ "$NAME" = "latest.json" ] && continue
             echo "Uploading: $NAME"
             ossutil cp "$f" "${OSS_BASE}/${NAME}" -f
-            # latest 目录去掉版本号，保持固定下载链接
+            # Strip version from filename for stable download link
             LATEST_NAME=$(echo "$NAME" | sed "s/_${VERSION}//")
             ossutil cp "$f" "oss://${OSS_BUCKET}/releases/latest/${LATEST_NAME}" -f
           done
 
-          # 校验签名文件数量
           SIG_COUNT=$(ls assets/*.sig 2>/dev/null | wc -l)
           echo "Found ${SIG_COUNT} signature files"
           if [ "$SIG_COUNT" -eq 0 ]; then
@@ -355,8 +353,7 @@ jobs:
             exit 1
           fi
 
-          # 构建 latest.json
-          # 注意：version 字段不带 v 前缀，这是 Tauri updater 的预期格式
+          # Build latest.json (version without v prefix, as Tauri updater expects)
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           PLATFORMS='{}'
 
@@ -393,7 +390,6 @@ jobs:
             esac
           done
 
-          # 校验 platforms 数量
           PLATFORM_COUNT=$(echo "$PLATFORMS" | jq 'keys | length')
           echo "Platforms in manifest: ${PLATFORM_COUNT}"
           if [ "$PLATFORM_COUNT" -eq 0 ]; then
@@ -410,7 +406,7 @@ jobs:
           echo "=== latest.json ==="
           cat latest.json
 
-          # 上传 latest.json 到固定路径（updater 读取）
+          # Upload latest.json to fixed path for updater
           ossutil cp latest.json "oss://${OSS_BUCKET}/releases/latest.json" -f
 
       - name: Notify Feishu
