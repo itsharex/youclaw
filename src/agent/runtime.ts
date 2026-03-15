@@ -117,6 +117,9 @@ export class AgentRuntime {
         if (modelConfig.baseUrl) {
           process.env.ANTHROPIC_BASE_URL = modelConfig.baseUrl
         }
+        logger.info({ provider: modelConfig.provider, model, baseUrl: modelConfig.baseUrl || '(default)' }, '模型配置已加载')
+      } else {
+        logger.info({ model, baseUrl: process.env.ANTHROPIC_BASE_URL || '(default)' }, '使用环境变量模型配置')
       }
 
       const { fullText, sessionId } = await this.executeQuery(
