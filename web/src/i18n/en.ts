@@ -51,6 +51,8 @@ export const en = {
     copied: 'Copied!',
     browserProfile: 'Browser Profile',
     noBrowserProfile: 'None',
+    editAvatar: 'Change Avatar',
+    editTitle: 'Rename',
   },
   agents: {
     title: 'Agents',

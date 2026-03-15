@@ -1,5 +1,5 @@
 import { User } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
 import {
   Message as AIMessage,
   MessageContent,
@@ -11,7 +11,29 @@ import {
   AttachmentInfo,
 } from "@/components/ai-elements/attachments";
 import { useI18n } from "@/i18n";
+import { useAppStore } from "@/stores/app";
 import type { Message } from "@/hooks/useChat";
+
+function UserAvatar() {
+  const { user, isLoggedIn } = useAppStore();
+  const sizeClass = "w-8 h-8 text-xs";
+
+  if (isLoggedIn && user?.avatar) {
+    return <img src={user.avatar} alt={user.name} className={cn("rounded-full object-cover", sizeClass)} />;
+  }
+  if (isLoggedIn && user) {
+    return (
+      <div className={cn("rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground font-bold", sizeClass)}>
+        {user.name?.[0]?.toUpperCase() ?? '?'}
+      </div>
+    );
+  }
+  return (
+    <div className={cn("rounded-full bg-muted flex items-center justify-center text-muted-foreground", sizeClass)}>
+      <User className="h-4 w-4" />
+    </div>
+  );
+}
 
 export function UserMessage({ message }: { message: Message }) {
   const { t } = useI18n();
@@ -20,11 +42,9 @@ export function UserMessage({ message }: { message: Message }) {
   return (
     <AIMessage from="user" data-testid="message-user">
       <div className="group flex gap-3 py-3 flex-row-reverse">
-        <Avatar className="h-8 w-8 mt-0.5">
-          <AvatarFallback className="text-[10px] font-semibold bg-blue-500/20 text-blue-500">
-            <User className="h-4 w-4" />
-          </AvatarFallback>
-        </Avatar>
+        <div className="mt-0.5">
+          <UserAvatar />
+        </div>
         <div className="flex-1 min-w-0 flex flex-col items-end">
           <div className="text-xs font-medium text-muted-foreground mb-1.5">
             {t.chat.you}

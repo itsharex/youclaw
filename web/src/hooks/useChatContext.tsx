@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { useChat } from './useChat'
-import { getChats, getAgents, deleteChat as deleteChatApi, getBrowserProfiles } from '../api/client'
+import { getChats, getAgents, deleteChat as deleteChatApi, updateChat as updateChatApi, getBrowserProfiles } from '../api/client'
 import { getItem, setItem, removeItem } from '@/lib/storage'
 import { ChatContext } from './chatCtx'
 
@@ -91,6 +91,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     refreshChats()
   }, [refreshChats, agents])
 
+  const updateChat = useCallback(async (chatIdToUpdate: string, data: { name?: string; avatar?: string }) => {
+    await updateChatApi(chatIdToUpdate, data)
+    refreshChats()
+  }, [refreshChats])
+
   return (
     <ChatContext.Provider value={{
       ...chat,
@@ -99,6 +104,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       searchQuery,
       setSearchQuery,
       deleteChat,
+      updateChat,
       agentId,
       setAgentId,
       agents,

@@ -53,6 +53,8 @@ export const zh: Translations = {
     copied: '已复制！',
     browserProfile: '浏览器 Profile',
     noBrowserProfile: '不使用',
+    editAvatar: '修改头像',
+    editTitle: '修改标题',
   },
   agents: {
     title: 'Agents',

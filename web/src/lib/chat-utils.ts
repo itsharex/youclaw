@@ -5,20 +5,30 @@ export type ChatItem = {
   channel: string
   last_message_time: string
   last_message: string | null
+  avatar: string | null
 }
 
-/** 根据 chatId 生成基于主题色的确定性渐变 */
-export function chatAvatar(chatId: string): string {
-  let hash = 0
-  for (let i = 0; i < chatId.length; i++) {
-    hash = ((hash << 5) - hash + chatId.charCodeAt(i)) | 0
+/** 8 种全色谱预设渐变色 */
+export const PRESET_GRADIENTS = [
+  'linear-gradient(135deg, oklch(0.65 0.18 0), oklch(0.50 0.15 40))',       // 红
+  'linear-gradient(135deg, oklch(0.65 0.18 30), oklch(0.50 0.15 70))',      // 橙
+  'linear-gradient(135deg, oklch(0.65 0.18 60), oklch(0.50 0.15 100))',     // 黄
+  'linear-gradient(135deg, oklch(0.65 0.15 120), oklch(0.50 0.13 160))',    // 绿
+  'linear-gradient(135deg, oklch(0.65 0.15 180), oklch(0.50 0.13 220))',    // 青
+  'linear-gradient(135deg, oklch(0.60 0.15 240), oklch(0.48 0.13 280))',    // 蓝
+  'linear-gradient(135deg, oklch(0.62 0.17 270), oklch(0.48 0.15 310))',    // 紫
+  'linear-gradient(135deg, oklch(0.62 0.17 310), oklch(0.48 0.15 350))',    // 粉
+] as const
+
+/** 解析 avatar 字段为 CSS background 值 */
+export function resolveAvatar(avatar: string | null): string {
+  if (!avatar) return PRESET_GRADIENTS[0]
+  if (avatar.startsWith('gradient:')) {
+    const index = parseInt(avatar.split(':')[1], 10)
+    return PRESET_GRADIENTS[index] ?? PRESET_GRADIENTS[0]
   }
-  // 基于主题色 hue(25) 做偏移，生成同色系渐变
-  const offset = Math.abs(hash) % 5
-  const hueShifts = [0, 15, -15, 30, -30]
-  const h1 = 25 + hueShifts[offset]
-  const h2 = h1 + 40
-  return `linear-gradient(135deg, oklch(0.65 0.18 ${h1}), oklch(0.55 0.15 ${h2}))`
+  // 未来扩展: image 类型
+  return PRESET_GRADIENTS[0]
 }
 
 // 按日期分组对话

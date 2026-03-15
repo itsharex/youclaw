@@ -24,7 +24,7 @@ export async function sendMessage(agentId: string, prompt: string, chatId?: stri
 
 // 获取聊天列表
 export async function getChats() {
-  return apiFetch<Array<{ chat_id: string; name: string; agent_id: string; channel: string; last_message_time: string; last_message: string | null }>>('/api/chats')
+  return apiFetch<Array<{ chat_id: string; name: string; agent_id: string; channel: string; last_message_time: string; last_message: string | null; avatar: string | null }>>('/api/chats')
 }
 
 // 获取消息历史
@@ -36,6 +36,14 @@ export async function getMessages(chatId: string) {
 export async function deleteChat(chatId: string) {
   return apiFetch<{ ok: boolean }>(`/api/chats/${encodeURIComponent(chatId)}`, {
     method: 'DELETE',
+  })
+}
+
+// 更新对话（头像/标题）
+export async function updateChat(chatId: string, data: { name?: string; avatar?: string }) {
+  return apiFetch<{ ok: boolean }>(`/api/chats/${encodeURIComponent(chatId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
   })
 }
 

@@ -126,6 +126,9 @@ export function initDatabase(): Database {
   // 迁移：添加附件列
   try { _db.exec('ALTER TABLE messages ADD COLUMN attachments TEXT') } catch {}
 
+  // 迁移：添加 chat 头像列
+  try { _db.exec('ALTER TABLE chats ADD COLUMN avatar TEXT') } catch {}
+
   getLogger().info({ path: paths.db }, '数据库初始化完成')
   return _db
 }
@@ -175,25 +178,41 @@ export function getMessages(chatId: string, limit = 50, before?: string): Array<
 
 export function upsertChat(chatId: string, agentId: string, name?: string, channel = 'web') {
   const db = getDatabase()
+  const avatar = `gradient:${Math.floor(Math.random() * 8)}`
   db.run(
-    `INSERT INTO chats (chat_id, name, agent_id, channel, last_message_time)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO chats (chat_id, name, agent_id, channel, last_message_time, avatar)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(chat_id) DO UPDATE SET
        last_message_time = excluded.last_message_time`,
-    [chatId, name ?? chatId, agentId, channel, new Date().toISOString()]
+    [chatId, name ?? chatId, agentId, channel, new Date().toISOString(), avatar]
   )
 }
 
 export function getChats(): Array<{
-  chat_id: string; name: string; agent_id: string; channel: string; last_message_time: string; last_message: string | null
+  chat_id: string; name: string; agent_id: string; channel: string;
+  last_message_time: string; last_message: string | null; avatar: string | null
 }> {
   const db = getDatabase()
   return queryAll(db, `
-    SELECT c.chat_id, c.name, c.agent_id, c.channel, c.last_message_time,
+    SELECT c.chat_id, c.name, c.agent_id, c.channel, c.last_message_time, c.avatar,
            (SELECT m.content FROM messages m WHERE m.chat_id = c.chat_id ORDER BY m.timestamp DESC LIMIT 1) AS last_message
     FROM chats c
     ORDER BY c.last_message_time DESC
   `)
+}
+
+export function updateChatFields(chatId: string, updates: { name?: string; avatar?: string }) {
+  const db = getDatabase()
+  const fields: string[] = []
+  const values: (string | null)[] = []
+
+  if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name) }
+  if (updates.avatar !== undefined) { fields.push('avatar = ?'); values.push(updates.avatar) }
+
+  if (fields.length === 0) return
+
+  values.push(chatId)
+  db.run(`UPDATE chats SET ${fields.join(', ')} WHERE chat_id = ?`, values)
 }
 
 export function deleteChat(chatId: string) {
