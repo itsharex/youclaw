@@ -1,30 +1,31 @@
 import { Hono } from 'hono'
 import { getAuthToken } from './auth.ts'
 import { getLogger } from '../logger/index.ts'
-
-// readmex.com API 地址
-function getReadmexBaseUrl(): string {
-  return process.env.READMEX_API_URL || 'https://readmex.com'
-}
+import { getEnv } from '../config/index.ts'
 
 /**
- * 本地代理路由：将 SDK 的请求转发到 readmex.com，附加 rdxtoken header
+ * 本地代理路由：将 SDK 的请求转发到云服务，附加 rdxtoken header
  * cloud 模式下 ANTHROPIC_BASE_URL 指向 http://localhost:{port}/api/proxy
- * SDK 调用 /api/proxy/v1/messages → 转发到 readmex.com/api/v1/messages
+ * SDK 调用 /api/proxy/v1/messages → 转发到云服务 /api/v1/messages
  */
 export function createProxyRoutes() {
   const app = new Hono()
 
-  // ALL /proxy/v1/messages — 转发到 readmex.com
+  // ALL /proxy/v1/messages — 转发到云服务
   app.all('/proxy/v1/messages', async (c) => {
-    const token = getAuthToken()
+    const apiUrl = getEnv().YOUCLAW_API_URL
     const logger = getLogger()
 
+    if (!apiUrl) {
+      return c.json({ error: 'Cloud service not configured' }, 501)
+    }
+
+    const token = getAuthToken()
     if (!token) {
       return c.json({ error: 'Not logged in, cannot proxy to cloud' }, 401)
     }
 
-    const targetUrl = `${getReadmexBaseUrl()}/api/v1/messages`
+    const targetUrl = `${apiUrl}/api/v1/messages`
 
     try {
       // 透传请求
@@ -77,7 +78,7 @@ export function createProxyRoutes() {
         },
       })
     } catch (err) {
-      logger.error({ error: String(err), category: 'proxy' }, 'Proxy to readmex.com failed')
+      logger.error({ error: String(err), category: 'proxy' }, 'Proxy to cloud service failed')
       return c.json({ error: 'Proxy request failed' }, 502)
     }
   })

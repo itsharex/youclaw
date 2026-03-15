@@ -1,24 +1,24 @@
 import { Hono } from 'hono'
 import { getAuthToken } from './auth.ts'
 import { getLogger } from '../logger/index.ts'
-
-// readmex.com API 地址
-function getReadmexBaseUrl(): string {
-  return process.env.READMEX_API_URL || 'https://readmex.com'
-}
+import { getEnv } from '../config/index.ts'
 
 export function createCreditRoutes() {
   const app = new Hono()
 
   // GET /credit/balance — 查询积分余额
   app.get('/credit/balance', async (c) => {
+    const apiUrl = getEnv().YOUCLAW_API_URL
+    if (!apiUrl) {
+      return c.json({ error: 'Cloud service not configured' }, 501)
+    }
     const token = getAuthToken()
     if (!token) {
       return c.json({ error: 'Not logged in' }, 401)
     }
 
     try {
-      const res = await fetch(`${getReadmexBaseUrl()}/api/credit/balance`, {
+      const res = await fetch(`${apiUrl}/api/credit/balance`, {
         headers: { rdxtoken: token },
       })
 
@@ -38,6 +38,10 @@ export function createCreditRoutes() {
 
   // GET /credit/transactions — 查询积分流水
   app.get('/credit/transactions', async (c) => {
+    const apiUrl = getEnv().YOUCLAW_API_URL
+    if (!apiUrl) {
+      return c.json({ error: 'Cloud service not configured' }, 501)
+    }
     const token = getAuthToken()
     if (!token) {
       return c.json({ error: 'Not logged in' }, 401)
@@ -45,7 +49,7 @@ export function createCreditRoutes() {
 
     try {
       // 透传分页参数
-      const url = new URL(`${getReadmexBaseUrl()}/api/credit/transactions`)
+      const url = new URL(`${apiUrl}/api/credit/transactions`)
       const page = c.req.query('page')
       const limit = c.req.query('limit')
       if (page) url.searchParams.set('page', page)

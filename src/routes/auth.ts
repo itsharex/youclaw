@@ -5,16 +5,6 @@ import { getLogger } from '../logger/index.ts'
 
 const AUTH_TOKEN_KEY = 'auth_token'
 
-// 官网地址：开发环境用 localhost:3077，生产环境用 youclaw.cc
-function getWebsiteBaseUrl(): string {
-  return process.env.YOUCLAW_WEBSITE_URL || (process.env.NODE_ENV === 'production' ? 'https://youclaw.dev' : 'http://localhost:3077')
-}
-
-// readmex.com API 地址
-function getReadmexBaseUrl(): string {
-  return process.env.READMEX_API_URL || 'https://readmex.com'
-}
-
 // 从 kv_state 读取 token
 export function getAuthToken(): string | null {
   const db = getDatabase()
@@ -37,12 +27,22 @@ function clearAuthToken(): void {
 export function createAuthRoutes() {
   const app = new Hono()
 
+  // GET /auth/cloud-status — 前端判断是否启用云服务
+  app.get('/auth/cloud-status', (c) => {
+    const env = getEnv()
+    return c.json({
+      enabled: !!(env.YOUCLAW_WEBSITE_URL && env.YOUCLAW_API_URL),
+    })
+  })
+
   // GET /auth/login — 返回登录 URL（前端用浏览器打开）
   app.get('/auth/login', (c) => {
-    // 从请求 Host 头推断实际端口，兼容 Tauri 随机端口和 Vite proxy
+    const websiteUrl = getEnv().YOUCLAW_WEBSITE_URL
+    if (!websiteUrl) {
+      return c.json({ error: 'Cloud service not configured' }, 501)
+    }
     const host = c.req.header('host') || `localhost:${getEnv().PORT}`
     const redirectUri = `http://${host}/api/auth/callback`
-    const websiteUrl = getWebsiteBaseUrl()
     const loginUrl = `${websiteUrl}/login?redirect_uri=${encodeURIComponent(redirectUri)}&app_name=YouClaw`
     return c.json({ loginUrl })
   })
@@ -75,13 +75,17 @@ export function createAuthRoutes() {
 
   // GET /auth/user — 获取用户信息
   app.get('/auth/user', async (c) => {
+    const apiUrl = getEnv().YOUCLAW_API_URL
+    if (!apiUrl) {
+      return c.json({ error: 'Cloud service not configured' }, 501)
+    }
     const token = getAuthToken()
     if (!token) {
       return c.json({ error: 'Not logged in' }, 401)
     }
 
     try {
-      const res = await fetch(`${getReadmexBaseUrl()}/api/oauth/user`, {
+      const res = await fetch(`${apiUrl}/api/oauth/user`, {
         headers: { rdxtoken: token },
       })
 
@@ -93,13 +97,19 @@ export function createAuthRoutes() {
         return c.json({ error: 'Failed to fetch user info' }, 500)
       }
 
-      const data = await res.json() as { success?: boolean; data?: unknown }
+      const data = await res.json() as { success?: boolean; data?: { id?: number; displayName?: string; avatar?: string; email?: string } | null }
       // 官网返回 { success: true, data: null } 表示 token 无效
       if (!data.data) {
         clearAuthToken()
         return c.json({ error: 'Token expired' }, 401)
       }
-      return c.json(data.data)
+      const u = data.data
+      return c.json({
+        id: u.id ? String(u.id) : '',
+        name: u.displayName ?? '',
+        avatar: u.avatar ?? '',
+        email: u.email,
+      })
     } catch (err) {
       const logger = getLogger()
       logger.error({ error: String(err), category: 'auth' }, 'Failed to fetch user info')
@@ -111,11 +121,12 @@ export function createAuthRoutes() {
   app.post('/auth/logout', async (c) => {
     const token = getAuthToken()
     const logger = getLogger()
+    const apiUrl = getEnv().YOUCLAW_API_URL
 
-    if (token) {
+    if (token && apiUrl) {
       // 通知官网后端注销
       try {
-        await fetch(`${getReadmexBaseUrl()}/api/oauth/logout`, {
+        await fetch(`${apiUrl}/api/oauth/logout`, {
           method: 'POST',
           headers: { rdxtoken: token },
         })
@@ -131,9 +142,12 @@ export function createAuthRoutes() {
 
   // GET /auth/pay-url — 返回支付页 URL
   app.get('/auth/pay-url', (c) => {
+    const websiteUrl = getEnv().YOUCLAW_WEBSITE_URL
+    if (!websiteUrl) {
+      return c.json({ error: 'Cloud service not configured' }, 501)
+    }
     const host = c.req.header('host') || `localhost:${getEnv().PORT}`
     const redirectUri = `http://${host}/api/auth/pay-callback`
-    const websiteUrl = getWebsiteBaseUrl()
     const payUrl = `${websiteUrl}/pay?redirect_uri=${encodeURIComponent(redirectUri)}`
     return c.json({ payUrl })
   })
@@ -162,6 +176,86 @@ export function createAuthRoutes() {
         <script>setTimeout(() => window.close(), 3000)</script>
       </body></html>
     `)
+  })
+
+  // POST /auth/upload — 代理文件上传到 ReadmeX
+  app.post('/auth/upload', async (c) => {
+    const apiUrl = getEnv().YOUCLAW_API_URL
+    if (!apiUrl) {
+      return c.json({ error: 'Cloud service not configured' }, 501)
+    }
+    const token = getAuthToken()
+    if (!token) {
+      return c.json({ error: 'Not logged in' }, 401)
+    }
+
+    try {
+      const body = await c.req.raw.clone().arrayBuffer()
+      const contentType = c.req.header('content-type') || ''
+
+      const res = await fetch(`${apiUrl}/api/file/upload`, {
+        method: 'POST',
+        headers: {
+          rdxtoken: token,
+          'content-type': contentType,
+        },
+        body,
+      })
+
+      if (!res.ok) {
+        return c.json({ error: 'Upload failed' }, res.status)
+      }
+
+      const data = await res.json() as { data?: string }
+      return c.json({ url: data.data })
+    } catch (err) {
+      const logger = getLogger()
+      logger.error({ error: String(err), category: 'auth' }, 'File upload failed')
+      return c.json({ error: 'Upload failed' }, 500)
+    }
+  })
+
+  // POST /auth/update-profile — 修改用户名和头像
+  app.post('/auth/update-profile', async (c) => {
+    const apiUrl = getEnv().YOUCLAW_API_URL
+    if (!apiUrl) {
+      return c.json({ error: 'Cloud service not configured' }, 501)
+    }
+    const token = getAuthToken()
+    if (!token) {
+      return c.json({ error: 'Not logged in' }, 401)
+    }
+
+    try {
+      const body = await c.req.json() as { displayName?: string; avatar?: string }
+
+      const res = await fetch(`${apiUrl}/api/oauth/update_profile`, {
+        method: 'POST',
+        headers: {
+          rdxtoken: token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) {
+        return c.json({ error: 'Update profile failed' }, res.status)
+      }
+
+      const data = await res.json() as { data?: { id?: number; displayName?: string; avatar?: string; email?: string } }
+      const u = data.data
+      // 映射为前端 AuthUser 格式
+      return c.json({
+        id: u?.id ? String(u.id) : '',
+        name: u?.displayName ?? '',
+        avatar: u?.avatar ?? '',
+        email: u?.email,
+      })
+    } catch (err) {
+      const logger = getLogger()
+      logger.error({ error: String(err), category: 'auth' }, 'Update profile failed')
+      return c.json({ error: 'Update profile failed' }, 500)
+    }
   })
 
   // GET /auth/status — 检查登录状态（前端轮询用）

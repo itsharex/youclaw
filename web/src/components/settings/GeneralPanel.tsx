@@ -1,16 +1,17 @@
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { useI18n } from "@/i18n"
 import { useAppStore } from "@/stores/app"
 import type { Theme } from "@/hooks/useTheme"
+import { Sun, Moon, Monitor } from "lucide-react"
+import { cn } from "@/lib/utils"
 
-const themeOptions: { value: Theme; labelKey: "dark" | "light" | "system"; descKey: "darkDesc" | "lightDesc" | "systemDesc" }[] = [
-  { value: "dark", labelKey: "dark", descKey: "darkDesc" },
-  { value: "light", labelKey: "light", descKey: "lightDesc" },
-  { value: "system", labelKey: "system", descKey: "systemDesc" },
+const themeOptions: { value: Theme; labelKey: "dark" | "light" | "system"; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
+  { value: "light", labelKey: "light", icon: Sun },
+  { value: "dark", labelKey: "dark", icon: Moon },
+  { value: "system", labelKey: "system", icon: Monitor },
 ]
 
 const languageOptions = [
-  { value: "en", label: "English" },
+  { value: "en", label: "English (US)" },
   { value: "zh", label: "简体中文" },
 ] as const
 
@@ -22,45 +23,62 @@ export function GeneralPanel() {
   const setLocale = useAppStore((s) => s.setLocale)
 
   return (
-    <div className="pt-4 space-y-6">
+    <div className="space-y-8">
       {/* 主题 */}
       <div>
-        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-4">
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
           {t.settings.appearance}
-        </h3>
-        <RadioGroup value={theme} onValueChange={(v) => setTheme(v as Theme)}>
-          {themeOptions.map((option) => (
-            <label
-              key={option.value}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors hover:bg-accent"
-            >
-              <RadioGroupItem value={option.value} />
-              <div>
-                <span className="text-sm font-medium cursor-pointer">
-                  {t.settings[option.labelKey]}
-                </span>
-                <div className="text-xs text-muted-foreground">{t.settings[option.descKey]}</div>
-              </div>
-            </label>
-          ))}
-        </RadioGroup>
+        </h4>
+        <div className="grid grid-cols-3 gap-3">
+          {themeOptions.map((option) => {
+            const Icon = option.icon
+            return (
+              <button
+                key={option.value}
+                onClick={() => setTheme(option.value)}
+                className={cn(
+                  "p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-3",
+                  theme === option.value
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:border-muted-foreground/30"
+                )}
+              >
+                <div className={cn(
+                  "w-10 h-10 rounded-xl flex items-center justify-center",
+                  theme === option.value
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
+                )}>
+                  <Icon size={20} />
+                </div>
+                <span className="text-xs font-medium capitalize">{t.settings[option.labelKey]}</span>
+              </button>
+            )
+          })}
+        </div>
       </div>
+
       {/* 语言 */}
       <div>
-        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-4">
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
           {t.settings.language}
-        </h3>
-        <RadioGroup value={locale} onValueChange={(v) => setLocale(v as 'en' | 'zh')}>
+        </h4>
+        <div className="flex gap-3">
           {languageOptions.map((option) => (
-            <label
+            <button
               key={option.value}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors hover:bg-accent"
+              onClick={() => setLocale(option.value)}
+              className={cn(
+                "px-6 py-3 rounded-xl border-2 text-sm font-medium transition-all",
+                locale === option.value
+                  ? "border-primary bg-primary/10 text-foreground"
+                  : "border-border text-muted-foreground hover:border-muted-foreground/30"
+              )}
             >
-              <RadioGroupItem value={option.value} />
-              <span className="text-sm font-medium cursor-pointer">{option.label}</span>
-            </label>
+              {option.label}
+            </button>
           ))}
-        </RadioGroup>
+        </div>
       </div>
     </div>
   )

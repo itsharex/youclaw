@@ -9,7 +9,7 @@
  */
 
 import { execSync } from 'node:child_process'
-import { mkdirSync, readdirSync, unlinkSync } from 'node:fs'
+import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -32,6 +32,25 @@ function getCurrentTarget() {
   return `bun-${os}-${arch}`
 }
 
+// 从环境变量生成 build-constants.ts，将值编译进 sidecar
+function generateBuildConstants() {
+  const envKeys = ['YOUCLAW_WEBSITE_URL', 'YOUCLAW_API_URL', 'YOUCLAW_BUILTIN_API_URL', 'YOUCLAW_BUILTIN_AUTH_TOKEN']
+  const entries = {}
+  for (const key of envKeys) {
+    const val = process.env[key]
+    if (val) {
+      entries[key] = val
+    }
+  }
+
+  const constPath = resolve(root, 'src/config/build-constants.ts')
+  const code = `// 此文件由 build-sidecar.mjs 自动生成，请勿手动修改
+export const BUILD_CONSTANTS: Record<string, string> = ${JSON.stringify(entries, null, 2)}
+`
+  writeFileSync(constPath, code, 'utf-8')
+  console.log(`Generated build-constants.ts with keys: ${Object.keys(entries).join(', ') || '(none)'}`)
+}
+
 function build(bunTarget, outName) {
   const outPath = resolve(binDir, outName)
   console.log(`Building: ${bunTarget} → ${outName}`)
@@ -50,6 +69,9 @@ function build(bunTarget, outName) {
 
 // 确保输出目录存在
 mkdirSync(binDir, { recursive: true })
+
+// 生成编译时常量文件
+generateBuildConstants()
 
 const buildAll = process.argv.includes('--all')
 

@@ -4,18 +4,28 @@ import {
   Bot,
   CalendarClock,
   Brain,
-  Settings,
   PanelLeftClose,
   PanelLeft,
   SquarePen,
   LogIn,
-  Coins,
+  LogOut,
+  Settings2,
+  Github,
+  BookOpen,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useSidebar } from "@/hooks/useSidebar";
 import { isTauri } from "@/api/transport";
 import { useAppStore } from "@/stores/app";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 /** 行内左右 padding，保证收起时图标在 52px 内居中 (8+36+8=52) */
 const ROW_PX = "px-2";
@@ -26,8 +36,8 @@ interface AppSidebarProps {
 
 export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
   const { isCollapsed, toggle } = useSidebar();
-  const { t, locale, setLocale } = useI18n();
-  const { user, isLoggedIn, authLoading, creditBalance, login } = useAppStore();
+  const { t } = useI18n();
+  const { user, isLoggedIn, authLoading, login, logout, cloudEnabled } = useAppStore();
   const [platform, setPlatform] = useState("");
 
   useEffect(() => {
@@ -45,6 +55,32 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
     { to: "/cron", icon: CalendarClock, label: t.nav.tasks },
     { to: "/memory", icon: Brain, label: t.nav.memory },
   ];
+
+  // 头像组件
+  const AvatarView = ({ size = "md" }: { size?: "sm" | "md" }) => {
+    const sizeClass = size === "sm" ? "w-6 h-6 text-[10px]" : "w-8 h-8 text-xs";
+
+    if (isLoggedIn && user?.avatar) {
+      return <img src={user.avatar} alt={user.name} className={cn("rounded-full object-cover", sizeClass)} />;
+    }
+    if (isLoggedIn && user) {
+      return (
+        <div className={cn("rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground font-bold", sizeClass)}>
+          {user.name?.[0]?.toUpperCase() ?? '?'}
+        </div>
+      );
+    }
+    // 离线 / 未登录：默认头像
+    return (
+      <div className={cn("rounded-full bg-muted flex items-center justify-center text-muted-foreground", sizeClass)}>
+        <User className={size === "sm" ? "h-3 w-3" : "h-4 w-4"} />
+      </div>
+    );
+  };
+
+  // 用户名显示
+  const displayName = isLoggedIn && user ? user.name : (cloudEnabled ? t.account.notLoggedIn : t.account.offlineMode);
+  const displaySub = isLoggedIn && user ? "Pro Plan" : (cloudEnabled ? t.account.loginHint : t.account.offlineModeHint);
 
   return (
       <aside
@@ -140,109 +176,94 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
         {/* 填充空间 */}
         <div className="flex-1" />
 
-        {/* 底部 */}
+        {/* 底部：用户头像弹出菜单 */}
         <div
-          className="border-t border-[var(--subtle-border)] py-2 space-y-0.5 px-1.5"
+          className="border-t border-[var(--subtle-border)] py-2 px-1.5"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
-          {/* 用户信息 / 登录按钮 */}
-          {isLoggedIn && user ? (
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className={cn(
-                "flex items-center h-9 w-full rounded-[10px] whitespace-nowrap overflow-hidden",
-                "transition-all duration-200 ease-[var(--ease-soft)]",
-                "px-1",
-                "text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)]",
-              )}
-            >
-              <div className="w-9 h-9 shrink-0 flex items-center justify-center">
-                {user.avatar ? (
-                  <img src={user.avatar} alt={user.name} className="w-5 h-5 rounded-full" />
-                ) : (
-                  <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-primary text-[10px] font-bold">
-                    {user.name?.[0]?.toUpperCase() ?? '?'}
-                  </div>
-                )}
-              </div>
-              <span
-                className={cn(
-                  "text-sm truncate transition-opacity duration-200 flex-1 text-left",
-                  isCollapsed ? "opacity-0" : "opacity-100",
-                )}
-              >
-                {user.name}
-              </span>
-              {!isCollapsed && creditBalance !== null && (
-                <span className="text-xs text-muted-foreground flex items-center gap-0.5 shrink-0 mr-1">
-                  <Coins className="h-3 w-3" />
-                  {creditBalance}
-                </span>
-              )}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => login()}
-              disabled={authLoading}
-              className={cn(
-                "flex items-center h-9 w-full rounded-[10px] whitespace-nowrap overflow-hidden",
-                "transition-all duration-200 ease-[var(--ease-soft)]",
-                "px-1",
-                "text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)]",
-              )}
-            >
-              <div className="w-9 h-9 shrink-0 flex items-center justify-center">
-                <LogIn className="h-4 w-4" />
-              </div>
-              <span
-                className={cn(
-                  "text-sm transition-opacity duration-200",
-                  isCollapsed ? "opacity-0" : "opacity-100",
-                )}
-              >
-                {authLoading ? t.account.loggingIn : t.account.login}
-              </span>
-            </button>
-          )}
-
-          {/* 设置 */}
-          <div className="flex items-center">
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className={cn(
-                "flex items-center h-9 w-full rounded-[10px] whitespace-nowrap overflow-hidden",
-                "transition-all duration-200 ease-[var(--ease-soft)]",
-                "px-1",
-                "text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)]",
-              )}
-              aria-label={t.settings.title}
-            >
-              <div className="w-9 h-9 shrink-0 flex items-center justify-center">
-                <Settings className="h-4 w-4" />
-              </div>
-              <span
-                className={cn(
-                  "text-sm transition-opacity duration-200",
-                  isCollapsed ? "opacity-0" : "opacity-100",
-                )}
-              >
-                {t.settings.title}
-              </span>
-            </button>
-            {!isCollapsed && <div className="flex-1 min-w-0" />}
-            {!isCollapsed && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                onClick={() => setLocale(locale === "en" ? "zh" : "en")}
-                className="shrink-0 px-2 py-0.5 rounded-md border border-[var(--subtle-border)] text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)] transition-all duration-200 ease-[var(--ease-soft)]"
+                className={cn(
+                  "flex items-center w-full rounded-xl transition-all duration-200 ease-[var(--ease-soft)] outline-none",
+                  isCollapsed ? "px-0.5 py-1 justify-center" : "gap-2.5 px-2.5 py-2.5 hover:bg-[var(--surface-hover)]",
+                )}
               >
-                {locale === "en" ? "中" : "EN"}
+                <AvatarView size={isCollapsed ? "sm" : "md"} />
+                {!isCollapsed && (
+                  <div className="flex-1 min-w-0 text-left">
+                    <p className="text-xs font-semibold truncate">{isLoggedIn && user ? user.name : (cloudEnabled ? t.account.login : t.account.offlineMode)}</p>
+                    {isLoggedIn && user && (
+                      <p className="text-[10px] text-muted-foreground truncate">Pro Plan</p>
+                    )}
+                  </div>
+                )}
               </button>
-            )}
-          </div>
+            </DropdownMenuTrigger>
+
+            <DropdownMenuContent
+              side="top"
+              align="start"
+              sideOffset={8}
+              className="w-[240px] rounded-xl p-2"
+            >
+              {/* 顶部用户信息区 */}
+              <div className="flex flex-col items-center py-3 px-2">
+                <div className="mb-2">
+                  <AvatarView size="md" />
+                </div>
+                <p className="text-sm font-semibold truncate max-w-full">{displayName}</p>
+                <p className="text-[11px] text-muted-foreground truncate max-w-full">{displaySub}</p>
+              </div>
+
+              <DropdownMenuSeparator />
+
+              {/* 云模式 & 未登录：登录按钮 */}
+              {cloudEnabled && !isLoggedIn && (
+                <>
+                  <DropdownMenuItem onClick={() => login()} disabled={authLoading} className="gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+                    <LogIn className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">{authLoading ? t.account.loggingIn : t.account.login}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+
+              {/* 设置 */}
+              <DropdownMenuItem onClick={onOpenSettings} className="gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+                <Settings2 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">{t.settings.title}</span>
+              </DropdownMenuItem>
+
+              {/* GitHub */}
+              <DropdownMenuItem asChild className="gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+                <a href="https://github.com/CodePhiliaX/youClaw" target="_blank" rel="noopener noreferrer">
+                  <Github className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">GitHub</span>
+                </a>
+              </DropdownMenuItem>
+
+              {/* 文档 */}
+              <DropdownMenuItem asChild className="gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+                <a href="https://youclaw.dev" target="_blank" rel="noopener noreferrer">
+                  <BookOpen className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">{t.settings.about}</span>
+                </a>
+              </DropdownMenuItem>
+
+              {/* 登出 — 仅登录状态显示 */}
+              {isLoggedIn && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => logout()} className="gap-3 px-3 py-2.5 rounded-lg cursor-pointer text-destructive focus:text-destructive">
+                    <LogOut className="h-4 w-4" />
+                    <span className="text-sm">{t.account.logout}</span>
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </aside>
   );

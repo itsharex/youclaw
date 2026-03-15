@@ -50,16 +50,20 @@ export function updateSettings(partial: Partial<Settings>): Settings {
 export function getActiveModelConfig(): { apiKey: string; baseUrl: string; modelId: string; provider: string } | null {
   const settings = getSettings()
 
-  if (settings.activeModel.provider === 'cloud') {
-    // cloud 模式：SDK 调本地代理，代理转发时附加 rdxtoken
+  if (settings.activeModel.provider === 'builtin' || settings.activeModel.provider === 'cloud') {
     const env = getEnv()
-    const port = env.PORT
-    return {
-      apiKey: 'youclaw',
-      baseUrl: `http://localhost:${port}/api/proxy`,
-      modelId: 'claude-sonnet-4-6',
-      provider: 'cloud',
+    const builtinUrl = env.YOUCLAW_BUILTIN_API_URL
+    const builtinToken = env.YOUCLAW_BUILTIN_AUTH_TOKEN
+    if (builtinUrl && builtinToken) {
+      return {
+        apiKey: builtinToken,
+        baseUrl: builtinUrl,
+        modelId: 'claude-sonnet-4-6',
+        provider: 'builtin',
+      }
     }
+    // 未配置内置模型参数，fallback 到环境变量
+    return null
   }
 
   if (settings.activeModel.provider === 'custom' && settings.activeModel.id) {
@@ -74,6 +78,6 @@ export function getActiveModelConfig(): { apiKey: string; baseUrl: string; model
     }
   }
 
-  // builtin 或未找到自定义模型，返回 null 让调用方 fallback 到环境变量
+  // 未找到自定义模型，返回 null 让调用方 fallback 到环境变量
   return null
 }

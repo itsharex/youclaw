@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useI18n } from '../i18n'
+import { SidePanel } from '@/components/layout/SidePanel'
 
 type AgentState = {
   sessionId: string | null
@@ -68,7 +69,7 @@ export function Agents() {
   // 创建 Agent 表单
   const [newId, setNewId] = useState('')
   const [newName, setNewName] = useState('')
-  const [newModel, setNewModel] = useState('claude-sonnet-4-6')
+  const [newModel, setNewModel] = useState('default')
   const [isCreating, setIsCreating] = useState(false)
 
   // 展开的文档
@@ -165,7 +166,7 @@ export function Agents() {
       setViewMode('detail')
       setNewId('')
       setNewName('')
-      setNewModel('claude-sonnet-4-6')
+      setNewModel('default')
     } catch {
       // 静默处理
     } finally {
@@ -191,7 +192,7 @@ export function Agents() {
   return (
     <div className="flex h-full">
       {/* 左侧：Agent 列表 */}
-      <div className="w-[260px] border-r border-border flex flex-col">
+      <SidePanel>
         <div className="p-3 border-b border-border flex items-center justify-between">
           <h2 className="font-semibold text-sm">{t.agents.title}</h2>
           <button
@@ -242,7 +243,7 @@ export function Agents() {
             </button>
           ))}
         </div>
-      </div>
+      </SidePanel>
 
       {/* 右侧 */}
       <div className="flex-1 overflow-y-auto">

@@ -2,6 +2,7 @@ import { z } from 'zod/v4'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { BUILD_CONSTANTS } from './build-constants.ts'
 
 /**
  * 手动加载 .env 文件到 process.env（不覆盖已有值）
@@ -59,6 +60,12 @@ const envSchema = z.object({
   WECOM_ENCODING_AES_KEY: z.string().optional(),
   DINGTALK_CLIENT_ID: z.string().optional(),
   DINGTALK_SECRET: z.string().optional(),
+  // 云服务地址（不配置则为离线模式）
+  YOUCLAW_WEBSITE_URL: z.string().optional(),
+  YOUCLAW_API_URL: z.string().optional(),
+  // 内置模型配置（编译时注入）
+  YOUCLAW_BUILTIN_API_URL: z.string().optional(),
+  YOUCLAW_BUILTIN_AUTH_TOKEN: z.string().optional(),
 })
 
 export type EnvConfig = z.infer<typeof envSchema>
@@ -70,6 +77,14 @@ export function loadEnv(): EnvConfig {
 
   // Node.js/tsx 不会自动加载 .env，需要手动加载
   loadDotEnv()
+
+  // 构建时常量注入：build-sidecar.mjs 会生成 build-constants.ts，
+  // 把编译时环境变量写成普通 JS 对象，这里合并到 process.env
+  for (const [key, val] of Object.entries(BUILD_CONSTANTS)) {
+    if (val && !process.env[key]) {
+      process.env[key] = val
+    }
+  }
 
   const result = envSchema.safeParse(process.env)
   if (!result.success) {

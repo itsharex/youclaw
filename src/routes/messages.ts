@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod/v4'
 import { bodyLimit } from 'hono/body-limit'
-import { getMessages, getChats, deleteChat } from '../db/index.ts'
+import { getMessages, getChats, deleteChat, updateChatFields } from '../db/index.ts'
 import type { AgentManager, AgentQueue } from '../agent/index.ts'
 import type { MessageRouter } from '../channel/index.ts'
 import type { InboundMessage } from '../channel/index.ts'
@@ -77,6 +77,14 @@ export function createMessagesRoutes(agentManager: AgentManager, agentQueue: Age
       attachments: m.attachments ? JSON.parse(m.attachments) : null,
     }))
     return c.json(parsed.reverse())
+  })
+
+  // PATCH /api/chats/:chatId — 修改对话头像/标题
+  messages.patch('/chats/:chatId', async (c) => {
+    const chatId = c.req.param('chatId')
+    const body = await c.req.json<{ name?: string; avatar?: string }>()
+    updateChatFields(chatId, body)
+    return c.json({ ok: true })
   })
 
   // DELETE /api/chats/:chatId — 删除对话及其消息

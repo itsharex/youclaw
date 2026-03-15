@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { isTauri } from "@/api/transport"
 import { useI18n } from "@/i18n"
+import { Github, Globe, Cog } from "lucide-react"
 
 type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "ready" | "up-to-date" | "error"
 
@@ -102,43 +103,72 @@ export function AboutPanel() {
   const showInstall = update.status === "ready"
 
   return (
-    <div className="flex flex-col items-center pt-8">
-      <h2 className="text-2xl font-bold mb-1">{t.settings.appName}</h2>
-      <p className="text-sm text-muted-foreground mb-8">
-        {isTauri ? version : t.settings.webVersion}
-      </p>
+    <div className="flex flex-col items-center py-12 space-y-8">
+      {/* App Logo */}
+      <div className="w-20 h-20 bg-primary rounded-3xl flex items-center justify-center shadow-lg">
+        <Cog size={40} className="text-primary-foreground" />
+      </div>
 
-      {/* 更新功能仅在桌面模式显示 */}
+      {/* App Info */}
+      <div className="text-center space-y-2">
+        <h2 className="text-2xl font-bold">{t.settings.appName}</h2>
+        <p className="text-sm text-muted-foreground">
+          {isTauri ? version : t.settings.webVersion}
+        </p>
+        <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
+          Your personal AI assistant — open source, fast, and incredibly helpful.
+        </p>
+      </div>
+
+      {/* 更新功能 */}
       {isTauri && (
-        <>
-          <div className="w-full max-w-xs">
-            {!showInstall && (
-              <Button
-                className="w-full"
-                onClick={handleCheck}
-                disabled={isChecking}
-              >
-                {t.settings.checkForUpdates}
-              </Button>
-            )}
-            {showInstall && (
-              <Button className="w-full" onClick={handleRelaunch}>
-                {t.settings.restartAndUpdate}
-              </Button>
-            )}
-            {showProgress && (
-              <Progress className="mt-3" value={update.progress} />
-            )}
-            <p className="mt-3 text-sm text-muted-foreground min-h-[1.2em] text-center">
-              {update.message}
-            </p>
-          </div>
-        </>
+        <div className="w-full max-w-xs">
+          {!showInstall && (
+            <Button
+              className="w-full rounded-xl"
+              onClick={handleCheck}
+              disabled={isChecking}
+            >
+              {t.settings.checkForUpdates}
+            </Button>
+          )}
+          {showInstall && (
+            <Button className="w-full rounded-xl" onClick={handleRelaunch}>
+              {t.settings.restartAndUpdate}
+            </Button>
+          )}
+          {showProgress && (
+            <Progress className="mt-3" value={update.progress} />
+          )}
+          <p className="mt-3 text-sm text-muted-foreground min-h-[1.2em] text-center">
+            {update.message}
+          </p>
+        </div>
       )}
 
       {!isTauri && (
         <p className="text-sm text-muted-foreground">{t.settings.webModeHint}</p>
       )}
+
+      {/* 社交链接 */}
+      <div className="flex gap-3">
+        <Button variant="outline" size="sm" className="gap-2 rounded-xl" asChild>
+          <a href="https://github.com/CodePhiliaX/youClaw" target="_blank" rel="noopener noreferrer">
+            <Github size={14} />
+            GitHub
+          </a>
+        </Button>
+        <Button variant="outline" size="sm" className="gap-2 rounded-xl" asChild>
+          <a href="https://youclaw.dev" target="_blank" rel="noopener noreferrer">
+            <Globe size={14} />
+            Website
+          </a>
+        </Button>
+      </div>
+
+      <p className="text-[10px] text-muted-foreground uppercase tracking-widest pt-4">
+        &copy; 2025 You Claw AI. All rights reserved.
+      </p>
     </div>
   )
 }

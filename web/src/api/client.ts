@@ -24,7 +24,7 @@ export async function sendMessage(agentId: string, prompt: string, chatId?: stri
 
 // 获取聊天列表
 export async function getChats() {
-  return apiFetch<Array<{ chat_id: string; name: string; agent_id: string; channel: string; last_message_time: string }>>('/api/chats')
+  return apiFetch<Array<{ chat_id: string; name: string; agent_id: string; channel: string; last_message_time: string; last_message: string | null; avatar: string | null }>>('/api/chats')
 }
 
 // 获取消息历史
@@ -36,6 +36,14 @@ export async function getMessages(chatId: string) {
 export async function deleteChat(chatId: string) {
   return apiFetch<{ ok: boolean }>(`/api/chats/${encodeURIComponent(chatId)}`, {
     method: 'DELETE',
+  })
+}
+
+// 更新对话（头像/标题）
+export async function updateChat(chatId: string, data: { name?: string; avatar?: string }) {
+  return apiFetch<{ ok: boolean }>(`/api/chats/${encodeURIComponent(chatId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
   })
 }
 
@@ -365,6 +373,10 @@ export interface AuthUser {
   email?: string
 }
 
+export async function getCloudStatus() {
+  return apiFetch<{ enabled: boolean }>('/api/auth/cloud-status')
+}
+
 export async function getAuthLoginUrl() {
   return apiFetch<{ loginUrl: string }>('/api/auth/login')
 }
@@ -383,6 +395,29 @@ export async function getAuthStatus() {
 
 export async function getPayUrl() {
   return apiFetch<{ payUrl: string }>('/api/auth/pay-url')
+}
+
+export async function uploadFile(file: File): Promise<string> {
+  const base = await getBackendBaseUrl()
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${base}/api/auth/upload`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error || `Upload failed: ${res.status}`)
+  }
+  const data = await res.json() as { url: string }
+  return data.url
+}
+
+export async function updateProfile(params: { displayName?: string; avatar?: string }) {
+  return apiFetch<AuthUser>('/api/auth/update-profile', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
 }
 
 // ===== Credit API =====

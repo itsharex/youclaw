@@ -56,8 +56,23 @@ jobs:
           cdn-base-url: ${{ secrets.CDN_BASE_URL }}
 
       - name: Build sidecar
+        env:
+          YOUCLAW_WEBSITE_URL: ${{ secrets.YOUCLAW_WEBSITE_URL }}
+          YOUCLAW_API_URL: ${{ secrets.YOUCLAW_API_URL }}
+          YOUCLAW_BUILTIN_API_URL: ${{ secrets.YOUCLAW_BUILTIN_API_URL }}
+          YOUCLAW_BUILTIN_AUTH_TOKEN: ${{ secrets.YOUCLAW_BUILTIN_AUTH_TOKEN }}
         run: |
           mkdir -p src-tauri/bin
+          node -e "
+            const e = process.env;
+            const c = {};
+            for (const k of ['YOUCLAW_WEBSITE_URL','YOUCLAW_API_URL','YOUCLAW_BUILTIN_API_URL','YOUCLAW_BUILTIN_AUTH_TOKEN']) {
+              if (e[k]) c[k] = e[k];
+            }
+            require('fs').writeFileSync('src/config/build-constants.ts',
+              'export const BUILD_CONSTANTS: Record<string, string> = ' + JSON.stringify(c, null, 2) + '\n');
+            console.log('build-constants.ts:', Object.keys(c));
+          "
           bun build --compile --target=${{ matrix.bun_target }} src/index.ts --outfile src-tauri/bin/youclaw-server-${{ matrix.sidecar_suffix }}
 
       - name: Import macOS certificates
@@ -116,8 +131,23 @@ jobs:
 
       - name: Build sidecar
         shell: bash
+        env:
+          YOUCLAW_WEBSITE_URL: ${{ secrets.YOUCLAW_WEBSITE_URL }}
+          YOUCLAW_API_URL: ${{ secrets.YOUCLAW_API_URL }}
+          YOUCLAW_BUILTIN_API_URL: ${{ secrets.YOUCLAW_BUILTIN_API_URL }}
+          YOUCLAW_BUILTIN_AUTH_TOKEN: ${{ secrets.YOUCLAW_BUILTIN_AUTH_TOKEN }}
         run: |
           mkdir -p src-tauri/bin
+          node -e "
+            const e = process.env;
+            const c = {};
+            for (const k of ['YOUCLAW_WEBSITE_URL','YOUCLAW_API_URL','YOUCLAW_BUILTIN_API_URL','YOUCLAW_BUILTIN_AUTH_TOKEN']) {
+              if (e[k]) c[k] = e[k];
+            }
+            require('fs').writeFileSync('src/config/build-constants.ts',
+              'export const BUILD_CONSTANTS: Record<string, string> = ' + JSON.stringify(c, null, 2) + '\n');
+            console.log('build-constants.ts:', Object.keys(c));
+          "
           bun build --compile --target=bun-windows-x64 src/index.ts --outfile src-tauri/bin/youclaw-server-x86_64-pc-windows-msvc.exe
 
       - name: Build Tauri app
@@ -260,8 +290,23 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Build sidecar
+        env:
+          YOUCLAW_WEBSITE_URL: ${{ secrets.YOUCLAW_WEBSITE_URL }}
+          YOUCLAW_API_URL: ${{ secrets.YOUCLAW_API_URL }}
+          YOUCLAW_BUILTIN_API_URL: ${{ secrets.YOUCLAW_BUILTIN_API_URL }}
+          YOUCLAW_BUILTIN_AUTH_TOKEN: ${{ secrets.YOUCLAW_BUILTIN_AUTH_TOKEN }}
         run: |
           mkdir -p src-tauri/bin
+          node -e "
+            const e = process.env;
+            const c = {};
+            for (const k of ['YOUCLAW_WEBSITE_URL','YOUCLAW_API_URL','YOUCLAW_BUILTIN_API_URL','YOUCLAW_BUILTIN_AUTH_TOKEN']) {
+              if (e[k]) c[k] = e[k];
+            }
+            require('fs').writeFileSync('src/config/build-constants.ts',
+              'export const BUILD_CONSTANTS: Record<string, string> = ' + JSON.stringify(c, null, 2) + '\n');
+            console.log('build-constants.ts:', Object.keys(c));
+          "
           bun build --compile --target=bun-linux-x64 src/index.ts --outfile src-tauri/bin/youclaw-server-x86_64-unknown-linux-gnu
 
       - name: Build Tauri app

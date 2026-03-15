@@ -23,6 +23,7 @@ export interface ChatContextType {
   searchQuery: string
   setSearchQuery: (q: string) => void
   deleteChat: (chatId: string) => Promise<void>
+  updateChat: (chatId: string, data: { name?: string; avatar?: string }) => Promise<void>
 
   agentId: string
   setAgentId: (id: string) => void

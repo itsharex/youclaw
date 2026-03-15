@@ -30,7 +30,11 @@ export function useChat(agentId: string) {
   const pendingToolUseRef = useRef<ToolUseItem[]>([])
   useEffect(() => { pendingToolUseRef.current = pendingToolUse }, [pendingToolUse])
 
+  // 记录最后一次收到 SSE 事件的时间，用于超时兜底
+  const lastEventTimeRef = useRef<number>(0)
+
   const { close: closeSSE } = useSSE(chatId, (event) => {
+    lastEventTimeRef.current = Date.now()
     switch (event.type) {
       case 'stream':
         setStreamingText(prev => prev + (event.text ?? ''))
@@ -79,6 +83,40 @@ export function useChat(agentId: string) {
         break
     }
   })
+
+  // SSE 兜底：处理中超过 8 秒没收到任何事件时，主动查询后端消息
+  const chatIdRef = useRef(chatId)
+  useEffect(() => { chatIdRef.current = chatId }, [chatId])
+
+  useEffect(() => {
+    if (!isProcessing) return
+    const timer = setInterval(async () => {
+      const cid = chatIdRef.current
+      if (!cid) return
+      // 距离上次事件超过 8 秒，主动拉取
+      if (Date.now() - lastEventTimeRef.current < 8000) return
+      try {
+        const msgs = await getMessages(cid)
+        const lastMsg = msgs[msgs.length - 1]
+        if (lastMsg && lastMsg.is_bot_message) {
+          // 后端已有 bot 回复，说明 complete 事件丢失了，手动恢复
+          setMessages(msgs.map(m => ({
+            id: m.id,
+            role: m.is_bot_message ? 'assistant' as const : 'user' as const,
+            content: m.content,
+            timestamp: m.timestamp,
+            attachments: (m as { attachments?: Attachment[] | null }).attachments ?? undefined,
+          })))
+          setStreamingText('')
+          setPendingToolUse([])
+          setIsProcessing(false)
+        }
+      } catch {
+        // 查询失败忽略，下次重试
+      }
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [isProcessing])
 
   useEffect(() => {
     if (chatStatus === 'error') return // 保持 error 状态直到 setTimeout 重置

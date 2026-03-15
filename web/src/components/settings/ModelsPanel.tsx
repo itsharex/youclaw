@@ -5,8 +5,8 @@ import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { useI18n } from "@/i18n"
 import { cn } from "@/lib/utils"
-import { Plus, Pencil, Trash2, Check, Settings2, Cloud } from "lucide-react"
-import { getSettings, updateSettings, type SettingsDTO, type CustomModelDTO } from "@/api/client"
+import { Plus, Pencil, Trash2, Check, Settings2, Cloud, Cpu } from "lucide-react"
+import { getSettings, updateSettings as apiUpdateSettings, type SettingsDTO, type CustomModelDTO } from "@/api/client"
 import { useAppStore } from "@/stores/app"
 
 // 内置模型定义
@@ -15,7 +15,6 @@ const BUILTIN_MODELS = [
     id: "youclaw-pro",
     name: "YouClaw Pro",
     description: "Most capable built-in model",
-    modelId: "claude-sonnet-4-6",
   },
 ] as const
 
@@ -26,7 +25,7 @@ interface ActiveModel {
 
 export function ModelsPanel() {
   const { t } = useI18n()
-  const { creditBalance } = useAppStore()
+  const { cloudEnabled } = useAppStore()
   const [builtinModel, setBuiltinModel] = useState("youclaw-pro")
   const [customModels, setCustomModels] = useState<CustomModelDTO[]>([])
   const [activeModel, setActiveModel] = useState<ActiveModel>({ provider: "builtin" })
@@ -48,16 +47,27 @@ export function ModelsPanel() {
     }).catch(console.error)
   }, [])
 
-  // 保存到后端
+  // 保存到后端，并同步 modelReady
   const saveSettings = useCallback(async (partial: Partial<SettingsDTO>) => {
     try {
-      const updated = await updateSettings(partial)
+      const updated = await apiUpdateSettings(partial)
       setActiveModel(updated.activeModel)
       setCustomModels(updated.customModels)
+
+      // 同步 modelReady 到全局 store
+      const { provider, id } = updated.activeModel
+      if (provider === 'builtin' || provider === 'cloud') {
+        useAppStore.setState({ modelReady: cloudEnabled })
+      } else {
+        const model = id
+          ? updated.customModels.find((m) => m.id === id)
+          : updated.customModels[0]
+        useAppStore.setState({ modelReady: !!model })
+      }
     } catch (err) {
       console.error('Failed to save settings:', err)
     }
-  }, [])
+  }, [cloudEnabled])
 
   // 切换 active provider
   const handleSetActiveProvider = async (provider: "builtin" | "custom") => {
@@ -144,7 +154,6 @@ export function ModelsPanel() {
               modelId: formModelId,
               baseUrl: formBaseUrl,
               provider: 'anthropic' as const,
-              // 如果用户输入了新的 apiKey 就用新的，否则保留原值（脱敏值会被后端忽略）
               ...(formApiKey.trim() ? { apiKey: formApiKey } : {}),
             }
           : m
@@ -172,7 +181,6 @@ export function ModelsPanel() {
     setCustomModels(updated)
 
     const partial: Partial<SettingsDTO> = { customModels: updated }
-    // 如果删的是当前激活的，切回内置
     if (activeModel.provider === "custom" && activeModel.id === id) {
       const newActive: ActiveModel = { provider: "builtin" }
       setActiveModel(newActive)
@@ -185,45 +193,49 @@ export function ModelsPanel() {
   const isCustomActive = (id: string) => activeModel.provider === "custom" && activeModel.id === id
 
   return (
-    <div className="pt-4 space-y-6">
+    <div className="space-y-8">
       {/* Active Model 区 */}
       <div>
-        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
           {t.settings.activeModel}
-        </h3>
-        <div className="grid grid-cols-2 gap-3">
-          {/* 内置模型（云服务）卡片 */}
-          <button
-            onClick={() => handleSetActiveProvider("builtin")}
-            className={cn(
-              "relative flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all",
-              activeModel.provider === "builtin" || activeModel.provider === "cloud"
-                ? "border-primary bg-primary/5"
-                : "border-border hover:border-muted-foreground/30"
-            )}
-          >
-            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Cloud size={16} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium">{t.settings.builtinProvider}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                {t.settings.cloudDesc}{creditBalance != null ? ` · ${creditBalance}` : ''}
+        </h4>
+        <div className={cn("grid gap-3", cloudEnabled ? "grid-cols-2" : "grid-cols-1")}>
+          {/* 内置模型（云服务）卡片 — 离线模式隐藏 */}
+          {cloudEnabled && (
+            <button
+              onClick={() => handleSetActiveProvider("builtin")}
+              className={cn(
+                "relative flex items-start gap-4 p-5 rounded-2xl border-2 text-left transition-all",
+                activeModel.provider === "builtin" || activeModel.provider === "cloud"
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-muted-foreground/30"
+              )}
+            >
+              <div className={cn(
+                "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                activeModel.provider === "builtin" || activeModel.provider === "cloud"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground"
+              )}>
+                <Cloud size={18} />
               </div>
-            </div>
-            {(activeModel.provider === "builtin" || activeModel.provider === "cloud") && (
-              <span className="absolute top-3 right-3 flex items-center gap-1 text-xs font-medium text-primary">
-                <Check size={12} />
-                {t.settings.currentSelection}
-              </span>
-            )}
-          </button>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold">{t.settings.builtinProvider}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {t.settings.cloudDesc}
+                </div>
+              </div>
+              {(activeModel.provider === "builtin" || activeModel.provider === "cloud") && (
+                <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
+              )}
+            </button>
+          )}
 
           {/* 自定义 API 卡片 */}
           <button
             onClick={() => handleSetActiveProvider("custom")}
             className={cn(
-              "relative flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all",
+              "relative flex items-start gap-4 p-5 rounded-2xl border-2 text-left transition-all",
               activeModel.provider === "custom"
                 ? "border-primary bg-primary/5"
                 : "border-border hover:border-muted-foreground/30",
@@ -231,98 +243,130 @@ export function ModelsPanel() {
             )}
             disabled={customModels.length === 0}
           >
-            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/10 text-orange-500">
-              <Settings2 size={16} />
+            <div className={cn(
+              "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+              activeModel.provider === "custom"
+                ? "bg-orange-500 text-white"
+                : "bg-muted text-muted-foreground"
+            )}>
+              <Settings2 size={18} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium">{t.settings.customProvider}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{t.settings.customDesc}</div>
+              <div className="text-sm font-semibold">{t.settings.customProvider}</div>
+              <div className="text-xs text-muted-foreground mt-1">{t.settings.customDesc}</div>
             </div>
             {activeModel.provider === "custom" && (
-              <span className="absolute top-3 right-3 flex items-center gap-1 text-xs font-medium text-primary">
-                <Check size={12} />
-                {t.settings.currentSelection}
-              </span>
+              <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
             )}
           </button>
         </div>
       </div>
 
-      {/* 内置模型列表 */}
-      <div>
-        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-          {t.settings.builtinModels}
-        </h3>
-        <div className="space-y-1.5">
-          {BUILTIN_MODELS.map((model) => (
-            <button
-              key={model.id}
-              onClick={() => handleSelectBuiltin(model.id)}
-              className={cn(
-                "w-full flex items-center justify-between px-4 py-3 rounded-lg text-left transition-colors",
-                builtinModel === model.id
-                  ? "bg-accent"
-                  : "hover:bg-accent/50"
-              )}
-            >
-              <div>
-                <div className="text-sm font-medium">{model.name}</div>
-                <div className="text-xs text-muted-foreground">{model.description}</div>
-              </div>
-              {builtinModel === model.id && (
-                <span className="text-xs font-medium text-primary flex items-center gap-1">
-                  <Check size={12} />
-                  {t.settings.currentSelection}
-                </span>
-              )}
-            </button>
-          ))}
+      {/* 内置模型列表 — 离线模式隐藏 */}
+      {cloudEnabled && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
+            {t.settings.builtinModels}
+          </h4>
+          <div className="space-y-2">
+            {BUILTIN_MODELS.map((model) => {
+              const isActive = builtinModel === model.id && (activeModel.provider === "builtin" || activeModel.provider === "cloud")
+              return (
+                <button
+                  key={model.id}
+                  onClick={() => handleSelectBuiltin(model.id)}
+                  className={cn(
+                    "w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all",
+                    isActive
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "w-10 h-10 rounded-xl flex items-center justify-center",
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
+                    )}>
+                      <Cpu size={18} />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold flex items-center gap-2">
+                        {model.name}
+                        {isActive && (
+                          <span className="text-xs font-medium text-primary flex items-center gap-1">
+                            <Check size={12} />
+                            {t.settings.currentSelection}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground">{model.description}</div>
+                    </div>
+                  </div>
+                  {isActive && (
+                    <div className="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 自定义模型列表 */}
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t.settings.customModels}
-          </h3>
-          <Button variant="ghost" size="sm" onClick={handleOpenAdd} className="h-7 gap-1">
+          </h4>
+          <Button variant="ghost" size="sm" onClick={handleOpenAdd} className="h-7 gap-1 rounded-lg">
             <Plus size={14} />
             {t.settings.addCustomModel}
           </Button>
         </div>
         {customModels.length === 0 ? (
-          <div className="text-sm text-muted-foreground py-4 text-center border border-dashed rounded-lg">
+          <div className="text-sm text-muted-foreground py-6 text-center border-2 border-dashed rounded-2xl">
             {t.settings.customDesc}
           </div>
         ) : (
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {customModels.map((model) => (
               <div
                 key={model.id}
                 className={cn(
-                  "flex items-center justify-between px-4 py-3 rounded-lg transition-colors",
-                  isCustomActive(model.id) ? "bg-accent" : "hover:bg-accent/50"
+                  "flex items-center justify-between p-4 rounded-2xl border-2 transition-all",
+                  isCustomActive(model.id) ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/30"
                 )}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium flex items-center gap-2">
-                    {model.name}
-                    {isCustomActive(model.id) && (
-                      <span className="text-xs font-medium text-primary flex items-center gap-1">
-                        <Check size={12} />
-                        {t.settings.currentSelection}
-                      </span>
-                    )}
+                <div className="min-w-0 flex-1 flex items-center gap-4">
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+                    isCustomActive(model.id)
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground"
+                  )}>
+                    <Settings2 size={18} />
                   </div>
-                  <div className="text-xs text-muted-foreground">{model.modelId}</div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold flex items-center gap-2">
+                      {model.name}
+                      {isCustomActive(model.id) && (
+                        <span className="text-xs font-medium text-primary flex items-center gap-1">
+                          <Check size={12} />
+                          {t.settings.currentSelection}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground">{model.modelId}</div>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {!isCustomActive(model.id) && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 text-xs"
+                      className="h-7 text-xs rounded-lg"
                       onClick={() => handleSetCustomActive(model.id)}
                     >
                       {t.settings.setDefault}
@@ -331,7 +375,7 @@ export function ModelsPanel() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 w-7 p-0"
+                    className="h-8 w-8 p-0 rounded-lg"
                     onClick={() => handleOpenEdit(model)}
                   >
                     <Pencil size={13} />
@@ -339,7 +383,7 @@ export function ModelsPanel() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                    className="h-8 w-8 p-0 rounded-lg text-destructive hover:text-destructive"
                     onClick={() => handleDeleteModel(model.id)}
                   >
                     <Trash2 size={13} />
@@ -365,7 +409,7 @@ export function ModelsPanel() {
                 onChange={(e) => setFormName(e.target.value)}
                 onBlur={() => handleBlur('name')}
                 placeholder={t.settings.modelNamePlaceholder}
-                className={touched.name && formErrors.name ? 'border-destructive' : ''}
+                className={cn("rounded-xl", touched.name && formErrors.name ? 'border-destructive' : '')}
               />
               {touched.name && formErrors.name && (
                 <p className="text-xs text-destructive">{formErrors.name}</p>
@@ -378,7 +422,7 @@ export function ModelsPanel() {
                 onChange={(e) => setFormModelId(e.target.value)}
                 onBlur={() => handleBlur('modelId')}
                 placeholder={t.settings.modelIdPlaceholder}
-                className={touched.modelId && formErrors.modelId ? 'border-destructive' : ''}
+                className={cn("rounded-xl", touched.modelId && formErrors.modelId ? 'border-destructive' : '')}
               />
               {touched.modelId && formErrors.modelId && (
                 <p className="text-xs text-destructive">{formErrors.modelId}</p>
@@ -392,7 +436,7 @@ export function ModelsPanel() {
                 onChange={(e) => setFormApiKey(e.target.value)}
                 onBlur={() => handleBlur('apiKey')}
                 placeholder={editingModel ? t.settings.apiKeyEditPlaceholder ?? "Leave empty to keep current key" : t.settings.apiKeyPlaceholder}
-                className={touched.apiKey && formErrors.apiKey ? 'border-destructive' : ''}
+                className={cn("rounded-xl", touched.apiKey && formErrors.apiKey ? 'border-destructive' : '')}
               />
               {touched.apiKey && formErrors.apiKey && (
                 <p className="text-xs text-destructive">{formErrors.apiKey}</p>
@@ -405,17 +449,17 @@ export function ModelsPanel() {
                 onChange={(e) => setFormBaseUrl(e.target.value)}
                 onBlur={() => handleBlur('baseUrl')}
                 placeholder={t.settings.baseUrlPlaceholder}
-                className={touched.baseUrl && formErrors.baseUrl ? 'border-destructive' : ''}
+                className={cn("rounded-xl", touched.baseUrl && formErrors.baseUrl ? 'border-destructive' : '')}
               />
               {touched.baseUrl && formErrors.baseUrl && (
                 <p className="text-xs text-destructive">{formErrors.baseUrl}</p>
               )}
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setDialogOpen(false)} className="rounded-xl">
                 {t.common.cancel}
               </Button>
-              <Button onClick={handleSaveModel} disabled={hasErrors}>
+              <Button onClick={handleSaveModel} disabled={hasErrors} className="rounded-xl">
                 {t.common.save}
               </Button>
             </div>
