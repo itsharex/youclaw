@@ -44,9 +44,10 @@ function loadDotEnv(): void {
 
 const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_BASE_URL: z.string().optional(),
   PORT: z.coerce.number().default(3000),
   DATA_DIR: z.string().default('./data'),
-  AGENT_MODEL: z.string().default('claude-sonnet-4-6'),
+  AGENT_MODEL: z.string().default('minimax/MiniMax-M2.5-highspeed'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   FEISHU_APP_ID: z.string().optional(),

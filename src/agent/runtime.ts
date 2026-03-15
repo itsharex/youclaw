@@ -121,12 +121,17 @@ export class AgentRuntime {
         }
         logger.info({ provider: modelConfig.provider, model, baseUrl: modelConfig.baseUrl || '(default)' }, '模型配置已加载')
       } else {
-        // 切回内置模型时，清除之前自定义模型设置的环境变量，避免 SDK 继续使用旧配置
+        // 切回内置模型时，恢复环境变量原始值，避免 SDK 继续使用旧的自定义模型配置
         if (env.ANTHROPIC_API_KEY) {
           process.env.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY
         }
-        delete process.env.ANTHROPIC_BASE_URL
-        logger.info({ model }, '使用环境变量模型配置')
+        // 恢复 .env 中的 ANTHROPIC_BASE_URL（如果有），而不是删除
+        if (env.ANTHROPIC_BASE_URL) {
+          process.env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL
+        } else {
+          delete process.env.ANTHROPIC_BASE_URL
+        }
+        logger.info({ model, baseUrl: env.ANTHROPIC_BASE_URL || '(default)' }, '使用环境变量模型配置')
       }
 
       // 将用户 auth token 注入到 SDK 请求 header 中
@@ -194,6 +199,7 @@ export class AgentRuntime {
 
       // 将 SDK 内部错误转为用户友好提示
       const { message: userError, errorCode } = this.humanizeError(rawError)
+      logger.info({ agentId, chatId, errorCode, userError, category: 'agent' }, '错误码识别结果')
 
       // on_error hook
       if (this.hooksManager) {
@@ -342,21 +348,31 @@ export class AgentRuntime {
     // 流式处理 SDK 消息
     let firstResponseLogged = false
     let turnCount = 0
-    for await (const message of q) {
-      // 记录首次响应延迟（TTFT）
-      if (!firstResponseLogged && message.type === 'assistant') {
-        const ttftMs = Date.now() - queryStartTime
-        logger.info({ agentId, chatId, ttftMs, category: 'agent' }, 'SDK 首次响应')
-        firstResponseLogged = true
+    try {
+      for await (const message of q) {
+        // 记录首次响应延迟（TTFT）
+        if (!firstResponseLogged && message.type === 'assistant') {
+          const ttftMs = Date.now() - queryStartTime
+          logger.info({ agentId, chatId, ttftMs, category: 'agent' }, 'SDK 首次响应')
+          firstResponseLogged = true
+        }
+        if (message.type === 'assistant') {
+          turnCount++
+        }
+        await this.handleMessage(message, agentId, chatId, (text) => {
+          fullText += text
+        }, (sid) => {
+          sessionId = sid
+        })
       }
-      if (message.type === 'assistant') {
-        turnCount++
+    } catch (err) {
+      // SDK 进程崩溃时，fullText 中可能包含上游 API 返回的实际错误信息
+      // 将 fullText 附加到错误消息中，以便 humanizeError 能匹配到具体错误类型
+      const errMsg = err instanceof Error ? err.message : String(err)
+      if (fullText.trim()) {
+        throw new Error(`${errMsg} | upstream_response: ${fullText.trim().slice(0, 500)}`)
       }
-      await this.handleMessage(message, agentId, chatId, (text) => {
-        fullText += text
-      }, (sid) => {
-        sessionId = sid
-      })
+      throw err
     }
 
     logger.info({
@@ -488,27 +504,28 @@ export class AgentRuntime {
 
   /**
    * 将 SDK 内部错误转为用户可读的提示，同时返回错误码
+   * 注意匹配顺序：具体错误类型在前，通用兜底（process exited）在最后
    */
   private humanizeError(raw: string): { message: string; errorCode: ErrorCode } {
-    // SDK 进程崩溃（通常是 API key/网络/模型配置问题）
-    if (/process exited with code/i.test(raw)) {
-      return { message: 'Model connection failed. Please check your model configuration (API Key, Base URL) in Settings → Models.', errorCode: ErrorCode.MODEL_CONNECTION_FAILED }
+    // 余额/积分不足（优先级最高，因为这需要弹充值弹窗）
+    if (/insufficient|credit|balance|quota|insufficient_credits/i.test(raw)) {
+      return { message: 'Insufficient credits or API quota. Please check your account balance.', errorCode: ErrorCode.INSUFFICIENT_CREDITS }
     }
     // API 认证失败
-    if (/401|unauthorized|authentication/i.test(raw)) {
+    if (/unauthorized|authentication_error|invalid.*token|invalid.*key/i.test(raw)) {
       return { message: 'Model authentication failed. Please check your API Key in Settings → Models.', errorCode: ErrorCode.AUTH_FAILED }
+    }
+    // 频率限制
+    if (/rate.?limit|too many requests|429/i.test(raw)) {
+      return { message: 'Request rate limited. Please try again later.', errorCode: ErrorCode.RATE_LIMITED }
     }
     // 网络错误
     if (/ECONNREFUSED|ENOTFOUND|fetch failed|network/i.test(raw)) {
       return { message: 'Cannot reach the model API. Please check your network connection and Base URL.', errorCode: ErrorCode.NETWORK_ERROR }
     }
-    // 余额/积分不足
-    if (/insufficient|credit|balance|quota/i.test(raw)) {
-      return { message: 'Insufficient credits or API quota. Please check your account balance.', errorCode: ErrorCode.INSUFFICIENT_CREDITS }
-    }
-    // 频率限制
-    if (/rate.?limit|too many requests|429/i.test(raw)) {
-      return { message: 'Request rate limited. Please try again later.', errorCode: ErrorCode.RATE_LIMITED }
+    // SDK 进程崩溃（兜底 — 放在最后，避免遮盖 upstream_response 中的具体错误）
+    if (/process exited with code/i.test(raw)) {
+      return { message: 'Model connection failed. Please check your model configuration (API Key, Base URL) in Settings → Models.', errorCode: ErrorCode.MODEL_CONNECTION_FAILED }
     }
     return { message: raw, errorCode: ErrorCode.UNKNOWN }
   }

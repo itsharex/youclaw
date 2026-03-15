@@ -68,10 +68,12 @@ export function useChat(agentId: string) {
         setIsProcessing(event.isProcessing ?? false)
         break
       case 'error':
+        console.log('[useChat] error event received:', { errorCode: event.errorCode, error: event.error })
         setChatStatus('error')
         setTimeout(() => setChatStatus('ready'), 2000)
         // 积分不足时弹充值弹窗
         if (event.errorCode === 'INSUFFICIENT_CREDITS') {
+          console.log('[useChat] INSUFFICIENT_CREDITS detected, showing dialog')
           setShowInsufficientCredits(true)
         }
         // 显示错误信息给用户，而不是静默吞掉
@@ -130,7 +132,14 @@ export function useChat(agentId: string) {
     else setChatStatus('ready')
   }, [isProcessing, streamingText, chatStatus])
 
-  const send = useCallback(async (prompt: string, browserProfileId?: string, attachments?: Attachment[]) => {    // 添加用户消息到列表
+  const send = useCallback(async (prompt: string, browserProfileId?: string, attachments?: Attachment[]) => {
+    // 新对话时预生成 chatId，让 SSE 连接提前建立，避免错过快速返回的 error 事件
+    const effectiveChatId = chatId ?? `web:${crypto.randomUUID()}`
+    if (!chatId) {
+      setChatId(effectiveChatId)
+    }
+
+    // 添加用户消息到列表
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
       role: 'user',
@@ -141,14 +150,20 @@ export function useChat(agentId: string) {
     setIsProcessing(true)
     setStreamingText('')
 
+    // 等待一帧让 React 完成渲染、建立 SSE 连接，避免错过 error 事件
+    if (!chatId) {
+      await new Promise(r => setTimeout(r, 100))
+    }
+
     try {
-      const result = await sendMessage(agentId, prompt, chatId ?? undefined, browserProfileId, attachments)
-      if (!chatId) {
-        setChatId(result.chatId)
-      }
+      await sendMessage(agentId, prompt, effectiveChatId, browserProfileId, attachments)
     } catch (err) {
       // 请求失败时显示错误并重置状态
       const errorMsg = err instanceof Error ? err.message : String(err)
+      // 检查是否包含积分不足关键词
+      if (/insufficient|credit|balance|quota/i.test(errorMsg)) {
+        setShowInsufficientCredits(true)
+      }
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'assistant',
