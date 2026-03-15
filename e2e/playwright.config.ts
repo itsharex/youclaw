@@ -15,7 +15,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'bun run dev',
-      port: 23107,
+      port: 62601,
       reuseExistingServer: true,
       cwd: '..',
     },

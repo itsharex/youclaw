@@ -44,7 +44,7 @@ function loadDotEnv(): void {
 
 const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
-  PORT: z.coerce.number().default(23107),
+  PORT: z.coerce.number().default(62601),
   DATA_DIR: z.string().default('./data'),
   AGENT_MODEL: z.string().default('claude-sonnet-4-6'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),

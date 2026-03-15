@@ -117,27 +117,26 @@ export function createAgentsRoutes(agentManager: AgentManager) {
 
   // POST /api/agents — create a new agent
   agents.post('/agents', async (c) => {
-    const body = await c.req.json<{ id: string; name: string; model?: string }>()
-
-    if (!body.id || typeof body.id !== 'string') {
-      return c.json({ error: 'Request body must include an "id" field (string)' }, 400)
-    }
+    const body = await c.req.json<{ id?: string; name: string; model?: string }>()
 
     if (!body.name || typeof body.name !== 'string') {
       return c.json({ error: 'Request body must include a "name" field (string)' }, 400)
     }
 
+    // 自动生成 id（如果未提供）
+    const id = (body.id && typeof body.id === 'string') ? body.id : crypto.randomUUID().slice(0, 8)
+
     // Validate id format: only alphanumeric, hyphens, and underscores allowed
-    if (!/^[a-zA-Z0-9_-]+$/.test(body.id)) {
+    if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
       return c.json({ error: 'id may only contain letters, digits, hyphens, and underscores' }, 400)
     }
 
     const paths = getPaths()
-    const agentDir = resolve(paths.agents, body.id)
+    const agentDir = resolve(paths.agents, id)
 
     // Check if already exists
     if (existsSync(agentDir)) {
-      return c.json({ error: `Agent "${body.id}" already exists` }, 409)
+      return c.json({ error: `Agent "${id}" already exists` }, 409)
     }
 
     // Create agent directory
@@ -148,7 +147,7 @@ export function createAgentsRoutes(agentManager: AgentManager) {
 
     // Write agent.yaml
     const config: Record<string, unknown> = {
-      id: body.id,
+      id,
       name: body.name,
     }
     if (body.model) {
@@ -168,7 +167,7 @@ export function createAgentsRoutes(agentManager: AgentManager) {
     // Reload agents
     await agentManager.reloadAgents()
 
-    const instance = agentManager.getAgent(body.id)
+    const instance = agentManager.getAgent(id)
     return c.json(instance ? { ...instance.config, state: instance.state } : config, 201)
   })
 

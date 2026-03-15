@@ -16,8 +16,8 @@ test.describe('端口配置: UI 测试', () => {
     await expect(page.getByTestId('port-input')).toBeVisible()
     // 保存按钮可见
     await expect(page.getByTestId('port-save-btn')).toBeVisible()
-    // placeholder 为 23107
-    await expect(page.getByTestId('port-input')).toHaveAttribute('placeholder', '23107')
+    // placeholder 为 62601
+    await expect(page.getByTestId('port-input')).toHaveAttribute('placeholder', '62601')
   })
 
   test('输入有效端口并保存', async ({ page }) => {
@@ -39,7 +39,7 @@ test.describe('端口配置: UI 测试', () => {
 
   test('清空端口恢复默认', async ({ page, request }) => {
     // 先通过 API 设置一个端口
-    await request.put('http://localhost:23107/api/settings/port', {
+    await request.put('http://localhost:62601/api/settings/port', {
       data: { port: '9999' },
     })
 

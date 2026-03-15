@@ -24,14 +24,14 @@ struct SidecarEvent {
 fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     let state = app.state::<SidecarState>();
 
-    // 读取用户配置的端口，未配置则使用默认 23107
+    // 读取用户配置的端口，未配置则使用默认 62601
     let port: u16 = app.store("settings.json")
         .ok()
         .and_then(|store| store.get("preferredPort"))
         .and_then(|v| v.as_str().map(String::from))
         .and_then(|p| p.parse::<u16>().ok())
         .filter(|p| *p >= 1024)
-        .unwrap_or(23107);
+        .unwrap_or(62601);
 
     // 检测端口是否可用
     match TcpListener::bind(format!("127.0.0.1:{}", port)) {
@@ -345,7 +345,7 @@ pub fn run() {
                             .and_then(|l| l.strip_prefix("PORT="))
                             .and_then(|v| v.trim().parse::<u16>().ok())
                     })
-                    .unwrap_or(23107);
+                    .unwrap_or(62601);
 
                     if let Ok(store) = app_handle.store("settings.json") {
                         let _ = store.set("port", serde_json::Value::String(port.to_string()));

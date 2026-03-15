@@ -27,7 +27,7 @@ export function updateCachedBaseUrl(url: string): void {
 
 /**
  * Get backend baseUrl
- * - Tauri mode: read port from store, default 23107
+ * - Tauri mode: read port from store, default 62601
  * - Web mode: empty string (uses Vite proxy)
  */
 export async function getBackendBaseUrl(): Promise<string> {
@@ -37,10 +37,10 @@ export async function getBackendBaseUrl(): Promise<string> {
   try {
     const { load } = await import('@tauri-apps/plugin-store')
     const store = await load('settings.json')
-    const port = (await store.get<string>('port')) || '23107'
+    const port = (await store.get<string>('port')) || '62601'
     _cachedBaseUrl = `http://localhost:${port}`
   } catch {
-    _cachedBaseUrl = 'http://localhost:23107'
+    _cachedBaseUrl = 'http://localhost:62601'
   }
   return _cachedBaseUrl
 }
@@ -51,7 +51,7 @@ export async function getBackendBaseUrl(): Promise<string> {
  */
 export function getBaseUrlSync(): string {
   if (!isTauri) return ''
-  return _cachedBaseUrl ?? 'http://localhost:23107'
+  return _cachedBaseUrl ?? 'http://localhost:62601'
 }
 
 /** Called once at app startup, waits for sidecar ready event before rendering */

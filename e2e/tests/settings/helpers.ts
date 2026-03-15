@@ -5,7 +5,7 @@ export { test, expect }
 
 // ===== 常量 =====
 
-export const API_BASE = 'http://localhost:23107'
+export const API_BASE = 'http://localhost:62601'
 
 // ===== API 辅助函数 =====
 

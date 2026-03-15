@@ -125,7 +125,7 @@ export function GeneralPanel() {
               type="number"
               min={1024}
               max={65535}
-              placeholder="23107"
+              placeholder="62601"
               value={portInput}
               onChange={(e) => { setPortInput(e.target.value); setPortSaved(false) }}
               className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background text-sm focus:border-primary focus:outline-none transition-colors"

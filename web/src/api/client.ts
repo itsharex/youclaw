@@ -71,8 +71,8 @@ export async function updateAgentDoc(agentId: string, filename: string, content:
 }
 
 // Create new agent
-export async function createAgent(data: { id: string; name: string; model?: string }) {
-  return apiFetch<{ ok: boolean; id: string }>('/api/agents', {
+export async function createAgent(data: { name: string; model?: string }) {
+  return apiFetch<{ id: string; name: string }>('/api/agents', {
     method: 'POST',
     body: JSON.stringify(data),
   })

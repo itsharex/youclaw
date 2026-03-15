@@ -67,7 +67,6 @@ export function Agents() {
   const [isSaving, setIsSaving] = useState(false)
 
   // Create Agent form
-  const [newId, setNewId] = useState('')
   const [newName, setNewName] = useState('')
   const [newModel, setNewModel] = useState('default')
   const [isCreating, setIsCreating] = useState(false)
@@ -157,14 +156,13 @@ export function Agents() {
 
   // Create Agent
   const handleCreate = async () => {
-    if (!newId.trim() || !newName.trim()) return
+    if (!newName.trim()) return
     setIsCreating(true)
     try {
-      await createAgent({ id: newId.trim(), name: newName.trim(), model: newModel })
+      const result = await createAgent({ name: newName.trim(), model: newModel })
       loadAgents()
-      setSelected(newId.trim())
+      setSelected(result.id)
       setViewMode('detail')
-      setNewId('')
       setNewName('')
       setNewModel('default')
     } catch {
@@ -250,8 +248,6 @@ export function Agents() {
         {viewMode === 'create' ? (
           <CreateAgentForm
             t={t}
-            newId={newId}
-            setNewId={setNewId}
             newName={newName}
             setNewName={setNewName}
             newModel={newModel}
@@ -307,8 +303,6 @@ export function Agents() {
 // === Create Agent Form ===
 function CreateAgentForm({
   t,
-  newId,
-  setNewId,
   newName,
   setNewName,
   newModel,
@@ -318,8 +312,6 @@ function CreateAgentForm({
   onCancel,
 }: {
   t: ReturnType<typeof useI18n>['t']
-  newId: string
-  setNewId: (v: string) => void
   newName: string
   setNewName: (v: string) => void
   newModel: string
@@ -333,18 +325,6 @@ function CreateAgentForm({
       <h1 className="text-lg font-semibold mb-6">{t.agents.createTitle}</h1>
 
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-1.5">{t.agents.agentId}</label>
-          <input
-            data-testid="agent-input-id"
-            value={newId}
-            onChange={(e) => setNewId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-            placeholder={t.agents.agentIdPlaceholder}
-            className="w-full px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          <p className="text-xs text-muted-foreground mt-1">{t.agents.agentIdHint}</p>
-        </div>
-
         <div>
           <label className="block text-sm font-medium mb-1.5">{t.agents.agentName}</label>
           <input
@@ -370,7 +350,7 @@ function CreateAgentForm({
           <button
             data-testid="agent-submit-btn"
             onClick={onCreate}
-            disabled={isCreating || !newId.trim() || !newName.trim()}
+            disabled={isCreating || !newName.trim()}
             className="flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />
