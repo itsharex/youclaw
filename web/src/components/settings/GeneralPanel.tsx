@@ -72,14 +72,15 @@ export function GeneralPanel() {
       const invoke = getTauriInvoke()
       await invoke('restart_sidecar')
       updateCachedBaseUrl(`http://localhost:${port}`)
-      setPortSaved(false)
+      // Reload to reconnect all SSE/API connections to new port
+      window.location.reload()
     } catch (err) {
-      // Dev mode or restart failure: update cache anyway, show hint to restart manually
+      // Dev mode or restart failure: update cache anyway, show hint
+      const errMsg = String(err)
       updateCachedBaseUrl(`http://localhost:${port}`)
       setPortSaved(true)
-      setPortMessage(t.settings.portWebHint)
-    } finally {
       setPortRestarting(false)
+      setPortMessage(errMsg.includes('Dev mode') ? t.settings.portWebHint : `Restart failed: ${errMsg}`)
     }
   }, [portValue, savePortToStore, t])
 
