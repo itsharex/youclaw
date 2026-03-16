@@ -644,6 +644,7 @@ export interface ChannelTypeInfo {
   chatIdPrefix: string
   configFields: ConfigFieldInfo[]
   docsUrl: string
+  hidden?: boolean
 }
 
 export interface ChannelInstance {
