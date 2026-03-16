@@ -1,8 +1,7 @@
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
-import { existsSync, copyFileSync, mkdirSync, statSync } from 'node:fs'
-import { execSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { getEnv } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { getSession, saveSession } from '../db/index.ts'
@@ -16,20 +15,8 @@ import { getActiveModelConfig } from '../settings/manager.ts'
 import { getAuthToken } from '../routes/auth.ts'
 import type { AgentConfig, ProcessParams } from './types.ts'
 
-// Safe logger wrapper — resolveCliPath() may run before logger is initialised
-function safeLog(level: 'info' | 'warn' | 'error', msg: string, extra?: Record<string, unknown>): void {
-  try {
-    const logger = getLogger()
-    logger[level]({ ...extra, category: 'agent' }, msg)
-  } catch {
-    // Logger not yet initialised — fall back to console
-    // eslint-disable-next-line no-console
-    console[level](`[agent] ${msg}`, extra ?? '')
-  }
-}
-
 // Resolve claude-agent-sdk cli.js path
-// - Tauri bundled mode: copy from RESOURCES_DIR to DATA_DIR/sdk-cache (quarantine bypass)
+// - Tauri bundled mode: read from RESOURCES_DIR
 // - Dev mode: locate via require.resolve in node_modules
 function resolveCliPath(): string {
   // Tauri bundled mode: cli.js is in the resources directory
@@ -37,49 +24,6 @@ function resolveCliPath(): string {
   if (resourcesDir) {
     const resourceCliPath = resolve(resourcesDir, '_up_/node_modules/@anthropic-ai/claude-agent-sdk/cli.js')
     if (existsSync(resourceCliPath)) {
-      // Copy to DATA_DIR/sdk-cache to escape quarantine on macOS
-      const dataDir = process.env.DATA_DIR
-      if (dataDir) {
-        try {
-          const cacheDir = resolve(dataDir, 'sdk-cache')
-          const cachedCliPath = resolve(cacheDir, 'cli.js')
-
-          // Version-aware cache: only copy if file size differs (new SDK version)
-          let needsCopy = true
-          if (existsSync(cachedCliPath)) {
-            try {
-              const srcSize = statSync(resourceCliPath).size
-              const dstSize = statSync(cachedCliPath).size
-              needsCopy = srcSize !== dstSize
-            } catch {
-              needsCopy = true
-            }
-          }
-
-          if (needsCopy) {
-            mkdirSync(cacheDir, { recursive: true })
-            copyFileSync(resourceCliPath, cachedCliPath)
-            safeLog('info', `Copied cli.js to sdk-cache (quarantine bypass)`, { src: resourceCliPath, dst: cachedCliPath })
-          }
-
-          // Strip macOS quarantine attribute from the cached copy
-          if (process.platform === 'darwin') {
-            try {
-              execSync(`xattr -d com.apple.quarantine "${cachedCliPath}"`, { timeout: 5000 })
-              safeLog('info', 'Stripped quarantine from cached cli.js')
-            } catch {
-              // Attribute may not exist — that's fine
-            }
-          }
-
-          return cachedCliPath
-        } catch (copyErr) {
-          safeLog('warn', 'Failed to copy cli.js to sdk-cache, falling back to resource path', {
-            error: copyErr instanceof Error ? copyErr.message : String(copyErr),
-          })
-          return resourceCliPath
-        }
-      }
       return resourceCliPath
     }
   }
@@ -93,80 +37,6 @@ function resolveCliPath(): string {
     // fallback: relative to project root
     return resolve(process.cwd(), 'node_modules/@anthropic-ai/claude-agent-sdk/cli.js')
   }
-}
-
-/**
- * Validate that the resolved cli.js is executable.
- * Logs diagnostics but never throws — failures are advisory only.
- */
-function validateCliExecutable(cliPath: string): void {
-  // Check file exists
-  if (!existsSync(cliPath)) {
-    safeLog('error', 'SDK cli.js not found', { cliPath })
-    return
-  }
-
-  // macOS: check quarantine attribute
-  if (process.platform === 'darwin') {
-    try {
-      const xattrOutput = execSync(`xattr -l "${cliPath}"`, { timeout: 3000, encoding: 'utf-8' })
-      if (xattrOutput.includes('com.apple.quarantine')) {
-        safeLog('warn', 'SDK cli.js still has quarantine attribute — Gatekeeper may block execution', { cliPath })
-      }
-    } catch {
-      // xattr command failed — likely no attributes at all, which is fine
-    }
-  }
-
-  // Quick spawn test: verify the CLI can at least start
-  try {
-    execSync(`"${process.execPath}" "${cliPath}" --help`, { timeout: 5000, encoding: 'utf-8', stdio: 'pipe' })
-    safeLog('info', 'SDK cli.js validation passed', { cliPath })
-  } catch (spawnErr) {
-    safeLog('warn', 'SDK cli.js quick-test failed — the agent may not start correctly', {
-      cliPath,
-      error: spawnErr instanceof Error ? spawnErr.message : String(spawnErr),
-    })
-  }
-}
-
-/**
- * Detect macOS system proxy settings and inject into process env.
- * Only runs on macOS; silently skips on other platforms.
- */
-function detectSystemProxy(): void {
-  if (process.platform !== 'darwin') return
-
-  // Skip if proxy env vars are already set
-  if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy) {
-    return
-  }
-
-  try {
-    const output = execSync('networksetup -getsecurewebproxy Wi-Fi', { timeout: 3000, encoding: 'utf-8' })
-    const enabledMatch = output.match(/^Enabled:\s*(Yes|No)/im)
-    if (enabledMatch && enabledMatch[1] === 'Yes') {
-      const serverMatch = output.match(/^Server:\s*(.+)/im)
-      const portMatch = output.match(/^Port:\s*(\d+)/im)
-      if (serverMatch?.[1] && portMatch?.[1]) {
-        const proxyUrl = `http://${serverMatch[1].trim()}:${portMatch[1].trim()}`
-        process.env.HTTPS_PROXY = proxyUrl
-        process.env.HTTP_PROXY = proxyUrl
-        safeLog('info', 'Detected macOS system proxy', { proxyUrl })
-      }
-    }
-  } catch {
-    // networksetup not available or failed — skip silently
-  }
-}
-
-// Deferred startup checks — run once on first executeQuery() call
-let _startupChecksDone = false
-function ensureStartupChecks(cliPath: string): void {
-  if (_startupChecksDone) return
-  _startupChecksDone = true
-  detectSystemProxy()
-  validateCliExecutable(cliPath)
 }
 
 export class AgentRuntime {
@@ -269,53 +139,6 @@ export class AgentRuntime {
       } else {
         // Custom model: clean up rdxtoken header to prevent leaking from previous builtin requests
         delete process.env.ANTHROPIC_CUSTOM_HEADERS
-      }
-
-      // Pre-flight check: verify API connectivity before spawning SDK subprocess
-      if (modelConfig?.baseUrl) {
-        const preflightHeaders: Record<string, string> = {
-          'Content-Type': 'application/json',
-          'anthropic-version': '2023-06-01',
-          'x-api-key': modelConfig.apiKey,
-        }
-        // Attach rdxtoken for builtin provider
-        const authToken = getAuthToken()
-        if (modelConfig.provider === 'builtin' && authToken) {
-          preflightHeaders['rdxtoken'] = authToken
-        }
-        try {
-          const preflight = await fetch(`${modelConfig.baseUrl}/v1/messages`, {
-            method: 'POST',
-            headers: preflightHeaders,
-            body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] }),
-            signal: AbortSignal.timeout(15000),
-          })
-          logger.info({
-            agentId, chatId,
-            preflightStatus: preflight.status,
-            baseUrl: modelConfig.baseUrl,
-            category: 'agent',
-          }, 'API pre-flight check completed')
-          if (preflight.status === 401 || preflight.status === 403) {
-            const body = await preflight.text().catch(() => '')
-            throw new Error(`API authentication failed (HTTP ${preflight.status}): ${body.slice(0, 200)}`)
-          }
-          if (preflight.status >= 500) {
-            const body = await preflight.text().catch(() => '')
-            logger.warn({ agentId, chatId, status: preflight.status, body: body.slice(0, 200), category: 'agent' }, 'API server error in pre-flight')
-          }
-        } catch (err) {
-          if (err instanceof Error && err.message.startsWith('API authentication failed')) {
-            throw err
-          }
-          if (err instanceof Error && (err.name === 'TimeoutError' || err.message.includes('timeout'))) {
-            throw new Error(`Cannot reach model API at ${modelConfig.baseUrl} (timeout after 15s). Please check your network connection.`)
-          }
-          if (err instanceof Error && /ECONNREFUSED|ENOTFOUND|fetch failed/.test(err.message)) {
-            throw new Error(`Cannot reach model API at ${modelConfig.baseUrl}: ${err.message}`)
-          }
-          logger.warn({ agentId, chatId, error: String(err), category: 'agent' }, 'API pre-flight check failed, proceeding with SDK anyway')
-        }
       }
 
       logger.info({
@@ -453,8 +276,6 @@ export class AgentRuntime {
       category: 'agent',
     }, 'SDK query started')
 
-    const cliPath = resolveCliPath()
-    ensureStartupChecks(cliPath)
     const queryOptions: Record<string, unknown> = {
       model,
       cwd,
@@ -462,11 +283,9 @@ export class AgentRuntime {
       abortController,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      pathToClaudeCodeExecutable: cliPath,
-      executable: process.execPath,
+      pathToClaudeCodeExecutable: resolveCliPath(),
       ...(existingSessionId ? { resume: existingSessionId } : {}),
     }
-    logger.info({ cliPath, executable: process.execPath, category: 'agent' }, 'SDK executable config')
 
     // Sub-agent config (compile ref references via AgentCompiler)
     if (this.config.agents) {
@@ -537,42 +356,12 @@ export class AgentRuntime {
       })
     }
 
-    // Stream-process SDK messages with first-message timeout
+    // Stream-process SDK messages
     logger.info({ agentId, chatId, category: 'agent' }, 'SDK query created, starting to consume messages')
-    let firstMessageReceived = false
     let firstResponseLogged = false
     let turnCount = 0
-
-    // 60s timeout for first message — if SDK subprocess hangs, fail fast
-    const FIRST_MESSAGE_TIMEOUT_MS = 60_000
-    let firstMessageTimer: ReturnType<typeof setTimeout> | null = null
-    const firstMessagePromise = new Promise<never>((_, reject) => {
-      firstMessageTimer = setTimeout(() => {
-        reject(new Error(`SDK subprocess did not respond within ${FIRST_MESSAGE_TIMEOUT_MS / 1000}s. The model API may be unreachable. (baseUrl: ${process.env.ANTHROPIC_BASE_URL || 'default'})`))
-      }, FIRST_MESSAGE_TIMEOUT_MS)
-    })
-
     try {
-      const iterator = q[Symbol.asyncIterator]()
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        // Race between next message and first-message timeout (only before first message)
-        const nextPromise = iterator.next()
-        const result = firstMessageReceived
-          ? await nextPromise
-          : await Promise.race([nextPromise, firstMessagePromise])
-
-        if (result.done) break
-        const message = result.value
-
-        if (!firstMessageReceived) {
-          firstMessageReceived = true
-          if (firstMessageTimer) {
-            clearTimeout(firstMessageTimer)
-            firstMessageTimer = null
-          }
-        }
-
+      for await (const message of q) {
         // Log time-to-first-token (TTFT)
         if (!firstResponseLogged && message.type === 'assistant') {
           const ttftMs = Date.now() - queryStartTime
@@ -590,54 +379,12 @@ export class AgentRuntime {
       }
     } catch (err) {
       // When SDK process crashes, fullText may contain actual error info from upstream API
-      const errMsg = err instanceof Error ? err.message : String(err)
-      const timeSinceStart = Date.now() - queryStartTime
-
-      // Detailed diagnostic logging for SDK subprocess failures
-      logger.error({
-        agentId, chatId,
-        error: errMsg,
-        durationMs: timeSinceStart,
-        firstMessageReceived,
-        cliPath,
-        executable: process.execPath,
-        cwd,
-        model,
-        hasApiKey: !!process.env.ANTHROPIC_API_KEY,
-        baseUrl: process.env.ANTHROPIC_BASE_URL || '(default)',
-        resourcesDir: process.env.RESOURCES_DIR || '(not set)',
-        dataDir: process.env.DATA_DIR || '(not set)',
-        platform: process.platform,
-        fullTextPreview: fullText.trim().slice(0, 300) || '(empty)',
-        category: 'agent',
-      }, 'SDK query failed — full diagnostic')
-
-      // If SDK crashed before producing any output and within 5s, likely a startup issue
-      if (!firstMessageReceived && timeSinceStart < 5000 && /process exited/i.test(errMsg)) {
-        const cliExists = existsSync(cliPath)
-        let hasQuarantine = false
-        if (process.platform === 'darwin' && cliExists) {
-          try {
-            const xattr = execSync(`xattr -l "${cliPath}"`, { timeout: 3000, encoding: 'utf-8' })
-            hasQuarantine = xattr.includes('com.apple.quarantine')
-          } catch { /* no attributes */ }
-        }
-        logger.error({
-          cliPath, cliExists, hasQuarantine,
-          timeSinceStart,
-          category: 'agent',
-        }, 'SDK subprocess failed immediately — possible quarantine or missing binary')
-      }
-
       // Append fullText to the error message so humanizeError can match specific error types
+      const errMsg = err instanceof Error ? err.message : String(err)
       if (fullText.trim()) {
         throw new Error(`${errMsg} | upstream_response: ${fullText.trim().slice(0, 500)}`)
       }
       throw err
-    } finally {
-      if (firstMessageTimer) {
-        clearTimeout(firstMessageTimer)
-      }
     }
 
     logger.info({
@@ -791,14 +538,6 @@ export class AgentRuntime {
     // Network error
     if (/ECONNREFUSED|ENOTFOUND|fetch failed|network/i.test(raw)) {
       return { message: 'Cannot reach the model API. Please check your network connection and Base URL.', errorCode: ErrorCode.NETWORK_ERROR }
-    }
-    // CLI startup blocked by macOS Gatekeeper / quarantine
-    if (/subprocess failed immediately|quarantine/i.test(raw)) {
-      return { message: 'Agent CLI blocked by macOS Gatekeeper. Try re-installing the app or run: xattr -cr /Applications/YouClaw.app', errorCode: ErrorCode.CLI_BLOCKED }
-    }
-    // CLI binary not found / corrupted install
-    if (/cli\.js.*not found|not found.*cli\.js/i.test(raw)) {
-      return { message: 'Agent CLI binary not found. The installation may be corrupted — please reinstall.', errorCode: ErrorCode.CLI_BLOCKED }
     }
     // SDK process crash (fallback — last to avoid masking specific errors in upstream_response)
     if (/process exited with code/i.test(raw)) {
