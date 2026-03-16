@@ -136,44 +136,56 @@ export class AgentRuntime {
           throw new Error('Not logged in: Please log in to use built-in models')
         }
         process.env.ANTHROPIC_CUSTOM_HEADERS = `rdxtoken: ${authToken}`
-
-        // Pre-flight check: verify connectivity to cloud server before spawning SDK subprocess
-        if (modelConfig.baseUrl) {
-          try {
-            const preflight = await fetch(`${modelConfig.baseUrl}/v1/messages`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'anthropic-version': '2023-06-01',
-                'x-api-key': modelConfig.apiKey,
-                'rdxtoken': authToken,
-              },
-              body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] }),
-              signal: AbortSignal.timeout(15000),
-            })
-            logger.info({
-              agentId, chatId,
-              preflightStatus: preflight.status,
-              category: 'agent',
-            }, 'Cloud pre-flight check completed')
-            if (preflight.status === 401 || preflight.status === 403) {
-              const body = await preflight.text().catch(() => '')
-              throw new Error(`Cloud authentication failed (HTTP ${preflight.status}): ${body.slice(0, 200)}`)
-            }
-          } catch (err) {
-            if (err instanceof Error && err.message.startsWith('Cloud authentication failed')) {
-              throw err
-            }
-            // Network-level failure
-            if (err instanceof Error && (err.name === 'TimeoutError' || err.message.includes('timeout'))) {
-              throw new Error('Cannot reach cloud server (timeout after 15s). Please check your network connection.')
-            }
-            logger.warn({ agentId, chatId, error: String(err), category: 'agent' }, 'Cloud pre-flight check failed, proceeding with SDK anyway')
-          }
-        }
       } else {
         // Custom model: clean up rdxtoken header to prevent leaking from previous builtin requests
         delete process.env.ANTHROPIC_CUSTOM_HEADERS
+      }
+
+      // Pre-flight check: verify API connectivity before spawning SDK subprocess
+      if (modelConfig?.baseUrl) {
+        const preflightHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'anthropic-version': '2023-06-01',
+          'x-api-key': modelConfig.apiKey,
+        }
+        // Attach rdxtoken for builtin provider
+        const authToken = getAuthToken()
+        if (modelConfig.provider === 'builtin' && authToken) {
+          preflightHeaders['rdxtoken'] = authToken
+        }
+        try {
+          const preflight = await fetch(`${modelConfig.baseUrl}/v1/messages`, {
+            method: 'POST',
+            headers: preflightHeaders,
+            body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] }),
+            signal: AbortSignal.timeout(15000),
+          })
+          logger.info({
+            agentId, chatId,
+            preflightStatus: preflight.status,
+            baseUrl: modelConfig.baseUrl,
+            category: 'agent',
+          }, 'API pre-flight check completed')
+          if (preflight.status === 401 || preflight.status === 403) {
+            const body = await preflight.text().catch(() => '')
+            throw new Error(`API authentication failed (HTTP ${preflight.status}): ${body.slice(0, 200)}`)
+          }
+          if (preflight.status >= 500) {
+            const body = await preflight.text().catch(() => '')
+            logger.warn({ agentId, chatId, status: preflight.status, body: body.slice(0, 200), category: 'agent' }, 'API server error in pre-flight')
+          }
+        } catch (err) {
+          if (err instanceof Error && err.message.startsWith('API authentication failed')) {
+            throw err
+          }
+          if (err instanceof Error && (err.name === 'TimeoutError' || err.message.includes('timeout'))) {
+            throw new Error(`Cannot reach model API at ${modelConfig.baseUrl} (timeout after 15s). Please check your network connection.`)
+          }
+          if (err instanceof Error && /ECONNREFUSED|ENOTFOUND|fetch failed/.test(err.message)) {
+            throw new Error(`Cannot reach model API at ${modelConfig.baseUrl}: ${err.message}`)
+          }
+          logger.warn({ agentId, chatId, error: String(err), category: 'agent' }, 'API pre-flight check failed, proceeding with SDK anyway')
+        }
       }
 
       logger.info({
@@ -391,12 +403,42 @@ export class AgentRuntime {
       })
     }
 
-    // Stream-process SDK messages
+    // Stream-process SDK messages with first-message timeout
     logger.info({ agentId, chatId, category: 'agent' }, 'SDK query created, starting to consume messages')
+    let firstMessageReceived = false
     let firstResponseLogged = false
     let turnCount = 0
+
+    // 60s timeout for first message — if SDK subprocess hangs, fail fast
+    const FIRST_MESSAGE_TIMEOUT_MS = 60_000
+    let firstMessageTimer: ReturnType<typeof setTimeout> | null = null
+    const firstMessagePromise = new Promise<never>((_, reject) => {
+      firstMessageTimer = setTimeout(() => {
+        reject(new Error(`SDK subprocess did not respond within ${FIRST_MESSAGE_TIMEOUT_MS / 1000}s. The model API may be unreachable. (baseUrl: ${process.env.ANTHROPIC_BASE_URL || 'default'})`))
+      }, FIRST_MESSAGE_TIMEOUT_MS)
+    })
+
     try {
-      for await (const message of q) {
+      const iterator = q[Symbol.asyncIterator]()
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        // Race between next message and first-message timeout (only before first message)
+        const nextPromise = iterator.next()
+        const result = firstMessageReceived
+          ? await nextPromise
+          : await Promise.race([nextPromise, firstMessagePromise])
+
+        if (result.done) break
+        const message = result.value
+
+        if (!firstMessageReceived) {
+          firstMessageReceived = true
+          if (firstMessageTimer) {
+            clearTimeout(firstMessageTimer)
+            firstMessageTimer = null
+          }
+        }
+
         // Log time-to-first-token (TTFT)
         if (!firstResponseLogged && message.type === 'assistant') {
           const ttftMs = Date.now() - queryStartTime
@@ -420,6 +462,10 @@ export class AgentRuntime {
         throw new Error(`${errMsg} | upstream_response: ${fullText.trim().slice(0, 500)}`)
       }
       throw err
+    } finally {
+      if (firstMessageTimer) {
+        clearTimeout(firstMessageTimer)
+      }
     }
 
     logger.info({

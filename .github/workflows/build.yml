@@ -227,16 +227,12 @@ jobs:
       - name: Re-package signed nsis.zip and regenerate all signatures
         shell: bash
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_PRIVATE_KEY_PASSWORD: ""
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
           NSIS_ZIP="unsigned/You.Claw_${VERSION}_x64-setup.nsis.zip"
           EXE_PATH=$(ls unsigned/*.exe | head -1)
-
-          # Regenerate .exe.sig for the code-signed exe
-          echo "Regenerating .exe.sig for code-signed exe..."
-          npx tauri signer sign "$EXE_PATH" --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
 
           # Replace exe in zip with signed version, then regenerate .nsis.zip.sig
           if [ -f "$NSIS_ZIP" ]; then
@@ -249,7 +245,7 @@ jobs:
             rm -rf unsigned/nsis_tmp
 
             echo "Regenerating .nsis.zip.sig for re-packaged nsis.zip..."
-            npx tauri signer sign "$NSIS_ZIP" --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            npx tauri signer sign "$NSIS_ZIP"
           fi
 
       - name: Upload signed artifacts to release
@@ -412,6 +408,9 @@ jobs:
             ossutil cp "$f" "oss://${OSS_BUCKET}/youclaw/releases/latest/${LATEST_NAME}" -f
           done
 
+          echo "=== All .sig files ==="
+          ls -la assets/*.sig 2>/dev/null || echo "No .sig files found"
+
           SIG_COUNT=$(ls assets/*.sig 2>/dev/null | wc -l)
           echo "Found ${SIG_COUNT} signature files"
           if [ "$SIG_COUNT" -eq 0 ]; then
@@ -427,6 +426,7 @@ jobs:
             [ ! -f "$f" ] && continue
             SIG=$(cat "$f")
             NAME=$(basename "$f")
+            echo "Processing sig: $NAME"
 
             case "$NAME" in
               *_aarch64.app.tar.gz.sig)
