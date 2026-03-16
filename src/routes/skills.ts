@@ -273,7 +273,7 @@ export function createSkillsRoutes(skillsLoader: SkillsLoader, agentManager: Age
     const name = c.req.param('name')
     const agents = agentManager.getAgents()
     const matched = agents
-      .filter((a) => a.skills?.includes(name))
+      .filter((a) => a.skills?.includes('*') || a.skills?.includes(name))
       .map((a) => ({ id: a.id, name: a.name }))
     return c.json({ agents: matched })
   })
