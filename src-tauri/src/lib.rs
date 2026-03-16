@@ -311,14 +311,6 @@ pub fn run() {
                     let _ = win.set_title_bar_style(TitleBarStyle::Overlay);
                 }
             }
-            // Windows: remove native decorations, frontend will draw custom title bar
-            #[cfg(target_os = "windows")]
-            {
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.set_decorations(false);
-                }
-            }
-
             // Create system tray (i18n based on system locale)
             let is_zh = sys_locale::get_locale()
                 .map(|l| l.starts_with("zh"))

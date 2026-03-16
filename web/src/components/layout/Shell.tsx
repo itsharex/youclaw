@@ -1,6 +1,5 @@
 import { type ReactNode, useState, useEffect } from 'react'
 import { AppSidebar } from './AppSidebar'
-import { WindowsTitleBar } from './WindowsTitleBar'
 import { ChatProvider } from '@/hooks/useChatContext'
 import { SettingsDialog, type SettingsTab } from '@/components/settings/SettingsDialog'
 import { isTauri } from '@/api/transport'
@@ -28,8 +27,6 @@ export function Shell({ children }: { children: ReactNode }) {
     <PlatformContext.Provider value={platformCtx}>
       <ChatProvider>
         <div className="h-screen flex flex-col bg-background text-foreground">
-          {/* Windows: full-width titlebar with controls */}
-          {isWin && <WindowsTitleBar />}
           <div className="flex-1 flex overflow-hidden">
             <AppSidebar onOpenSettings={(tab) => { setSettingsTab(tab as SettingsTab); setSettingsOpen(true) }} />
             <main className="flex-1 overflow-hidden flex flex-col">
