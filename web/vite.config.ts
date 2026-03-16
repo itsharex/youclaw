@@ -10,17 +10,17 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    // SSE 代理插件：绕过 Vite 默认 proxy 的响应缓冲
+    // SSE proxy plugin: bypass Vite default proxy response buffering
     {
       name: 'sse-proxy',
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
           if (!req.url?.startsWith('/api/stream/')) return next()
 
-          // 直接 pipe 到后端，不经过 http-proxy 的缓冲
+          // Pipe directly to the backend, bypassing http-proxy buffering
           const proxyReq = http.request(
-            `http://localhost:62601${req.url}`,
-            { method: 'GET', headers: { ...req.headers, host: 'localhost:62601' } },
+            `http://localhost:3000${req.url}`,
+            { method: 'GET', headers: { ...req.headers, host: 'localhost:3000' } },
             (proxyRes) => {
               res.writeHead(proxyRes.statusCode ?? 200, {
                 ...proxyRes.headers,
@@ -51,7 +51,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:62601',
+        target: 'http://localhost:3000',
         changeOrigin: true,
       },
     },

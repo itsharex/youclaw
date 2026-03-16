@@ -1,126 +1,457 @@
-import { describe, test, expect, beforeEach, mock, afterEach } from 'bun:test'
-import { RegistryManager } from './registry.ts'
-import type { SkillsLoader } from './loader.ts'
-import type { Skill } from './types.ts'
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { homedir } from 'node:os'
-
-// Initialize env and logger (required by RegistryManager internally)
+import { strToU8, zipSync } from 'fflate'
 import { loadEnv } from '../config/index.ts'
 import { initLogger } from '../logger/index.ts'
+import { RegistryManager } from './registry.ts'
+import type { SkillsLoader } from './loader.ts'
+import type { Skill, SkillRegistryMeta } from './types.ts'
+
 loadEnv()
 initLogger()
 
-/** Create mock SkillsLoader */
-function createMockLoader(skills: Partial<Skill>[] = []): SkillsLoader {
-  return {
+const apiBaseUrl = 'https://registry.test/api/v1'
+const downloadUrl = `${apiBaseUrl}/download`
+const testUserSkillsDir = resolve('/tmp', `youclaw-registry-test-${process.pid}`)
+
+function createMockLoader(skills: Partial<Skill>[] = []) {
+  let refreshCount = 0
+  const loader = {
     loadAllSkills: () => skills as Skill[],
-    refresh: () => skills as Skill[],
+    refresh: () => {
+      refreshCount += 1
+      return skills as Skill[]
+    },
   } as unknown as SkillsLoader
+
+  return {
+    loader,
+    getRefreshCount: () => refreshCount,
+  }
+}
+
+function createClawhubMeta(slug: string, version?: string): SkillRegistryMeta {
+  return {
+    source: 'clawhub',
+    slug,
+    installedAt: '2024-01-01T00:00:00.000Z',
+    displayName: slug,
+    version,
+  }
+}
+
+function createSkillZip(files: Record<string, string>) {
+  return zipSync(
+    Object.fromEntries(
+      Object.entries(files).map(([filePath, content]) => [filePath, strToU8(content)]),
+    ),
+  )
+}
+
+function getUserSkillDir(slug: string) {
+  return resolve(testUserSkillsDir, slug)
+}
+
+function createRegistryManager(
+  loader: SkillsLoader,
+  fetchImpl: typeof fetch,
+) {
+  return new RegistryManager(loader, {
+    userSkillsDir: testUserSkillsDir,
+    apiBaseUrl,
+    downloadUrl,
+    fetchImpl,
+    sleep: async () => {},
+  })
 }
 
 describe('RegistryManager', () => {
+  beforeEach(() => {
+    rmSync(testUserSkillsDir, { recursive: true, force: true })
+    mkdirSync(testUserSkillsDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    rmSync(testUserSkillsDir, { recursive: true, force: true })
+  })
+
   describe('getRecommended', () => {
-    test('returns recommended list with correct fields', () => {
-      const manager = new RegistryManager(createMockLoader())
+    test('returns fallback recommendations with normalized fields', () => {
+      const { loader } = createMockLoader()
+      const manager = createRegistryManager(loader, async () => new Response('nope', { status: 500 }))
       const list = manager.getRecommended()
 
       expect(list.length).toBe(10)
-      // Each item has required fields
-      for (const item of list) {
-        expect(typeof item.slug).toBe('string')
-        expect(typeof item.displayName).toBe('string')
-        expect(typeof item.summary).toBe('string')
-        expect(typeof item.category).toBe('string')
-        expect(typeof item.installed).toBe('boolean')
-      }
-      expect(list[0].slug).toBe('self-improving-agent')
-      expect(list[0].displayName).toBe('Self Improving Agent')
-      expect(list[0].category).toBe('agent')
+      expect(list[0]).toMatchObject({
+        slug: 'self-improving-agent',
+        displayName: 'Self Improving Agent',
+        category: 'agent',
+        source: 'fallback',
+      })
     })
 
-    test('marks installed skill as installed=true (via registryMeta)', () => {
-      const manager = new RegistryManager(createMockLoader([
-        {
-          name: 'DuckDuckGo Web Search',
-          source: 'user',
-          registryMeta: {
-            source: 'clawhub',
-            slug: 'ddg-web-search',
-            installedAt: '2024-01-01',
-            displayName: 'DuckDuckGo Web Search',
-          },
-        },
-      ]))
+    test('merges installed registry metadata into fallback items', () => {
+      const skillDir = getUserSkillDir('coding')
+      mkdirSync(skillDir, { recursive: true })
+      writeFileSync(resolve(skillDir, 'SKILL.md'), '---\nname: coding\ndescription: test\n---\n')
+      writeFileSync(resolve(skillDir, '.registry.json'), JSON.stringify(createClawhubMeta('coding', '1.0.0')))
+
+      const { loader } = createMockLoader()
+      const manager = createRegistryManager(loader, async () => new Response('nope', { status: 500 }))
       const list = manager.getRecommended()
+      const coding = list.find((skill) => skill.slug === 'coding')!
 
-      const ddg = list.find(s => s.slug === 'ddg-web-search')!
-      expect(ddg.installed).toBe(true)
+      expect(coding.installed).toBe(true)
+      expect(coding.installSource).toBe('clawhub')
+      expect(coding.installedVersion).toBe('1.0.0')
+    })
+  })
+
+  describe('listMarketplace', () => {
+    test('remote list merges installed state and update availability', async () => {
+      const { loader } = createMockLoader([
+        {
+          name: 'coding',
+          source: 'user',
+          registryMeta: createClawhubMeta('coding', '1.0.0'),
+        },
+      ])
+      const manager = createRegistryManager(loader, async (url) => {
+        if (String(url) === `${apiBaseUrl}/skills?limit=24&sort=trending&nonSuspiciousOnly=true`) {
+          return Response.json({
+            items: [
+              {
+                slug: 'coding',
+                displayName: 'Coding',
+                summary: 'Ship code',
+                tags: { latest: '1.2.0', coding: '1.2.0' },
+                stats: { downloads: 12, stars: 4, installsCurrent: 3, installsAllTime: 9 },
+                createdAt: 1,
+                updatedAt: 2,
+                latestVersion: { version: '1.2.0' },
+                metadata: { os: ['macos'], systems: ['aarch64-darwin'] },
+              },
+            ],
+            nextCursor: 'cursor-2',
+          })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      const result = await manager.listMarketplace()
+
+      expect(result.source).toBe('clawhub')
+      expect(result.nextCursor).toBe('cursor-2')
+      expect(result.items[0]).toMatchObject({
+        slug: 'coding',
+        installed: true,
+        installedVersion: '1.0.0',
+        latestVersion: '1.2.0',
+        hasUpdate: true,
+        downloads: 12,
+        stars: 4,
+        installsCurrent: 3,
+        installsAllTime: 9,
+      })
     })
 
-    test('marks installed skill as installed=true (via directory detection)', () => {
-      const userSkillsDir = resolve(homedir(), '.youclaw', 'skills')
-      const testDir = resolve(userSkillsDir, 'coding')
+    test('falls back to the bundled recommendations when remote loading fails', async () => {
+      const { loader } = createMockLoader()
+      const manager = createRegistryManager(loader, async () => new Response('boom', { status: 500 }))
 
-      // Create test directory
-      mkdirSync(testDir, { recursive: true })
-      writeFileSync(resolve(testDir, 'SKILL.md'), '---\nname: coding\ndescription: test\n---\n')
+      const result = await manager.listMarketplace({ query: 'coding', limit: 2 })
 
-      try {
-        const manager = new RegistryManager(createMockLoader())
-        const list = manager.getRecommended()
+      expect(result.source).toBe('fallback')
+      expect(result.items.length).toBeGreaterThan(0)
+      expect(result.items.every((item) => item.displayName || item.summary)).toBe(true)
+    })
+  })
 
-        const coding = list.find(s => s.slug === 'coding')!
-        expect(coding.installed).toBe(true)
-      } finally {
-        // Clean up
-        rmSync(testDir, { recursive: true, force: true })
-      }
+  describe('getMarketplaceSkill', () => {
+    test('reads remote skill detail', async () => {
+      const { loader } = createMockLoader()
+      const manager = createRegistryManager(loader, async (url) => {
+        if (String(url) === `${apiBaseUrl}/skills/coding`) {
+          return Response.json({
+            skill: {
+              slug: 'coding',
+              displayName: 'Coding',
+              summary: 'Ship code',
+              tags: { latest: '2.0.0', coding: '2.0.0' },
+              stats: { downloads: 8, stars: 5, installsCurrent: 2, installsAllTime: 7 },
+              createdAt: 10,
+              updatedAt: 20,
+            },
+            latestVersion: { version: '2.0.0' },
+            metadata: { os: ['linux'], systems: ['x86_64-linux'] },
+            owner: { handle: 'jerry', displayName: 'Jerry' },
+            moderation: { verdict: 'clean', isSuspicious: false, isMalwareBlocked: false },
+          })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      const detail = await manager.getMarketplaceSkill('coding')
+
+      expect(detail).toMatchObject({
+        slug: 'coding',
+        displayName: 'Coding',
+        latestVersion: '2.0.0',
+        ownerHandle: 'jerry',
+        ownerDisplayName: 'Jerry',
+      })
+      expect(detail.metadata).toEqual({ os: ['linux'], systems: ['x86_64-linux'] })
     })
   })
 
   describe('installSkill', () => {
-    test('throws error for unknown slug', async () => {
-      const manager = new RegistryManager(createMockLoader())
-      await expect(manager.installSkill('unknown-skill')).rejects.toThrow('Unknown recommended skill')
+    test('throws when the remote skill does not exist', async () => {
+      const { loader } = createMockLoader()
+      const manager = createRegistryManager(loader, async () => new Response('missing', { status: 404 }))
+
+      await expect(manager.installSkill('unknown-skill')).rejects.toThrow('404')
     })
 
-    test('throws error for already installed skill', async () => {
-      const userSkillsDir = resolve(homedir(), '.youclaw', 'skills')
-      const testDir = resolve(userSkillsDir, 'ddg-web-search')
+    test('downloads an archive and writes skill files plus registry metadata', async () => {
+      const { loader, getRefreshCount } = createMockLoader()
+      const zip = createSkillZip({
+        'coding/SKILL.md': '---\nname: coding\ndescription: Search web\n---\n',
+        'coding/README.txt': 'hello',
+      })
+      const manager = createRegistryManager(loader, async (url) => {
+        if (String(url) === `${apiBaseUrl}/skills/coding`) {
+          return Response.json({
+            skill: {
+              slug: 'coding',
+              displayName: 'Coding',
+              summary: 'Ship code',
+              tags: { latest: '1.2.3' },
+              stats: {},
+              createdAt: 1,
+              updatedAt: 2,
+            },
+            latestVersion: { version: '1.2.3' },
+          })
+        }
+        if (String(url) === `${downloadUrl}?slug=coding`) {
+          return new Response(zip, {
+            status: 200,
+            headers: { 'content-length': String(zip.byteLength) },
+          })
+        }
+        return new Response('not found', { status: 404 })
+      })
 
-      mkdirSync(testDir, { recursive: true })
-      writeFileSync(resolve(testDir, 'SKILL.md'), '---\nname: ddg\ndescription: test\n---\n')
+      await manager.installSkill('coding')
 
-      try {
-        const manager = new RegistryManager(createMockLoader())
-        await expect(manager.installSkill('ddg-web-search')).rejects.toThrow('already installed')
-      } finally {
-        rmSync(testDir, { recursive: true, force: true })
-      }
+      const skillDir = getUserSkillDir('coding')
+      expect(existsSync(resolve(skillDir, 'SKILL.md'))).toBe(true)
+      expect(existsSync(resolve(skillDir, 'README.txt'))).toBe(true)
+      const meta = JSON.parse(readFileSync(resolve(skillDir, '.registry.json'), 'utf-8')) as SkillRegistryMeta
+      expect(meta.source).toBe('clawhub')
+      expect(meta.slug).toBe('coding')
+      expect(meta.version).toBe('1.2.3')
+      expect(getRefreshCount()).toBe(1)
+    })
+
+    test('retries once after a 429 response', async () => {
+      const { loader } = createMockLoader()
+      const zip = createSkillZip({
+        'SKILL.md': '---\nname: coding\ndescription: Coding skill\n---\n',
+      })
+      let attempts = 0
+      const manager = createRegistryManager(loader, async (url) => {
+        if (String(url) === `${apiBaseUrl}/skills/coding`) {
+          return Response.json({
+            skill: {
+              slug: 'coding',
+              displayName: 'Coding',
+              summary: 'Ship code',
+              tags: { latest: '1.0.0' },
+              stats: {},
+              createdAt: 1,
+              updatedAt: 2,
+            },
+            latestVersion: { version: '1.0.0' },
+          })
+        }
+        if (String(url) === `${downloadUrl}?slug=coding`) {
+          attempts += 1
+          if (attempts === 1) {
+            return new Response('slow down', {
+              status: 429,
+              headers: { 'retry-after': '0' },
+            })
+          }
+          return new Response(zip, {
+            status: 200,
+            headers: { 'content-length': String(zip.byteLength) },
+          })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      await manager.installSkill('coding')
+
+      expect(attempts).toBe(2)
+      expect(existsSync(resolve(getUserSkillDir('coding'), 'SKILL.md'))).toBe(true)
+    })
+
+    test('cleans up when the archive is missing a root SKILL.md', async () => {
+      const { loader } = createMockLoader()
+      const zip = createSkillZip({
+        'docs/readme.txt': 'oops',
+      })
+      const manager = createRegistryManager(loader, async (url) => {
+        if (String(url) === `${apiBaseUrl}/skills/coding`) {
+          return Response.json({
+            skill: {
+              slug: 'coding',
+              displayName: 'Coding',
+              summary: 'Ship code',
+              tags: { latest: '1.0.0' },
+              stats: {},
+            },
+            latestVersion: { version: '1.0.0' },
+          })
+        }
+        if (String(url) === `${downloadUrl}?slug=coding`) {
+          return new Response(zip, { status: 200 })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      await expect(manager.installSkill('coding')).rejects.toThrow('SKILL.md')
+      expect(existsSync(getUserSkillDir('coding'))).toBe(false)
+    })
+
+    test('rejects path traversal entries and cleans up', async () => {
+      const { loader } = createMockLoader()
+      const zip = createSkillZip({
+        'coding/SKILL.md': '---\nname: coding\ndescription: Coding skill\n---\n',
+        'coding/../escape.txt': 'bad',
+      })
+      const manager = createRegistryManager(loader, async (url) => {
+        if (String(url) === `${apiBaseUrl}/skills/coding`) {
+          return Response.json({
+            skill: {
+              slug: 'coding',
+              displayName: 'Coding',
+              summary: 'Ship code',
+              tags: { latest: '1.0.0' },
+              stats: {},
+            },
+            latestVersion: { version: '1.0.0' },
+          })
+        }
+        if (String(url) === `${downloadUrl}?slug=coding`) {
+          return new Response(zip, { status: 200 })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      await expect(manager.installSkill('coding')).rejects.toThrow('illegal file path')
+      expect(existsSync(getUserSkillDir('coding'))).toBe(false)
+    })
+  })
+
+  describe('updateSkill', () => {
+    test('updates an installed ClawHub skill and writes the new version', async () => {
+      const skillDir = getUserSkillDir('coding')
+      mkdirSync(skillDir, { recursive: true })
+      writeFileSync(resolve(skillDir, 'SKILL.md'), '---\nname: coding\ndescription: old\n---\n')
+      writeFileSync(resolve(skillDir, '.registry.json'), JSON.stringify(createClawhubMeta('coding', '1.0.0')))
+
+      const { loader, getRefreshCount } = createMockLoader()
+      const zip = createSkillZip({
+        'coding/SKILL.md': '---\nname: coding\ndescription: new\n---\n',
+        'coding/README.txt': 'updated',
+      })
+      const manager = createRegistryManager(loader, async (url) => {
+        if (String(url) === `${apiBaseUrl}/skills/coding`) {
+          return Response.json({
+            skill: {
+              slug: 'coding',
+              displayName: 'Coding',
+              summary: 'Ship code',
+              tags: { latest: '1.1.0' },
+              stats: {},
+            },
+            latestVersion: { version: '1.1.0' },
+          })
+        }
+        if (String(url) === `${downloadUrl}?slug=coding`) {
+          return new Response(zip, { status: 200 })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      await manager.updateSkill('coding')
+
+      const meta = JSON.parse(readFileSync(resolve(skillDir, '.registry.json'), 'utf-8')) as SkillRegistryMeta
+      expect(meta.version).toBe('1.1.0')
+      expect(readFileSync(resolve(skillDir, 'README.txt'), 'utf-8')).toBe('updated')
+      expect(getRefreshCount()).toBe(1)
+    })
+
+    test('rejects an update when the installed version is already current', async () => {
+      const skillDir = getUserSkillDir('coding')
+      mkdirSync(skillDir, { recursive: true })
+      writeFileSync(resolve(skillDir, 'SKILL.md'), '---\nname: coding\ndescription: old\n---\n')
+      writeFileSync(resolve(skillDir, '.registry.json'), JSON.stringify(createClawhubMeta('coding', '1.1.0')))
+
+      const { loader } = createMockLoader()
+      const manager = createRegistryManager(loader, async (url) => {
+        if (String(url) === `${apiBaseUrl}/skills/coding`) {
+          return Response.json({
+            skill: {
+              slug: 'coding',
+              displayName: 'Coding',
+              summary: 'Ship code',
+              tags: { latest: '1.1.0' },
+              stats: {},
+            },
+            latestVersion: { version: '1.1.0' },
+          })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      await expect(manager.updateSkill('coding')).rejects.toThrow('already up to date')
     })
   })
 
   describe('uninstallSkill', () => {
-    test('throws error for uninstalled skill', async () => {
-      const slug = `test-uninstall-${Date.now()}`
-      const manager = new RegistryManager(createMockLoader())
-      await expect(manager.uninstallSkill(slug)).rejects.toThrow('is not installed')
+    test('throws when the skill is not installed', async () => {
+      const { loader } = createMockLoader()
+      const manager = createRegistryManager(loader, async () => new Response('nope', { status: 500 }))
+      await expect(manager.uninstallSkill('coding')).rejects.toThrow('is not installed')
     })
 
-    test('can uninstall an installed skill', async () => {
-      const slug = `test-uninstall-${Date.now()}`
-      const userSkillsDir = resolve(homedir(), '.youclaw', 'skills')
-      const testDir = resolve(userSkillsDir, slug)
+    test('rejects uninstall for skills not installed from ClawHub', async () => {
+      const skillDir = getUserSkillDir('coding')
+      mkdirSync(skillDir, { recursive: true })
+      writeFileSync(resolve(skillDir, 'SKILL.md'), '---\nname: coding\ndescription: test\n---\n')
 
-      mkdirSync(testDir, { recursive: true })
-      writeFileSync(resolve(testDir, 'SKILL.md'), '---\nname: test\ndescription: test\n---\n')
+      const { loader } = createMockLoader()
+      const manager = createRegistryManager(loader, async () => new Response('nope', { status: 500 }))
 
-      const manager = new RegistryManager(createMockLoader())
-      await manager.uninstallSkill(slug)
+      await expect(manager.uninstallSkill('coding')).rejects.toThrow('was not installed from ClawHub')
+    })
 
-      expect(existsSync(testDir)).toBe(false)
+    test('uninstalls skills that were installed from ClawHub', async () => {
+      const skillDir = getUserSkillDir('coding')
+      mkdirSync(skillDir, { recursive: true })
+      writeFileSync(resolve(skillDir, 'SKILL.md'), '---\nname: coding\ndescription: test\n---\n')
+      writeFileSync(resolve(skillDir, '.registry.json'), JSON.stringify(createClawhubMeta('coding', '1.0.0')))
+
+      const { loader, getRefreshCount } = createMockLoader()
+      const manager = createRegistryManager(loader, async () => new Response('nope', { status: 500 }))
+      await manager.uninstallSkill('coding')
+
+      expect(existsSync(skillDir)).toBe(false)
+      expect(getRefreshCount()).toBe(1)
     })
   })
 })

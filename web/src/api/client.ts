@@ -227,20 +227,98 @@ export async function toggleSkill(name: string, enabled: boolean) {
 
 // ===== Skill Marketplace API =====
 
-export interface RecommendedSkill {
+export type MarketplaceSort =
+  | 'updated'
+  | 'downloads'
+  | 'stars'
+  | 'installsCurrent'
+  | 'installsAllTime'
+  | 'trending'
+
+export interface MarketplaceSkill {
   slug: string
   displayName: string
   summary: string
-  category: string
   installed: boolean
+  score?: number
+  installSource?: string
+  installedVersion?: string
+  latestVersion?: string | null
+  hasUpdate: boolean
+  createdAt?: number | null
+  updatedAt?: number | null
+  downloads?: number | null
+  stars?: number | null
+  installsCurrent?: number | null
+  installsAllTime?: number | null
+  tags: string[]
+  category?: string
+  source: 'clawhub' | 'fallback'
+  metadata?: {
+    os: string[]
+    systems: string[]
+  }
 }
 
+export interface MarketplaceSkillDetail extends MarketplaceSkill {
+  ownerHandle?: string | null
+  ownerDisplayName?: string | null
+  ownerImage?: string | null
+  moderation?: {
+    isSuspicious: boolean
+    isMalwareBlocked: boolean
+    verdict: string
+    summary?: string | null
+  } | null
+}
+
+export interface MarketplacePage {
+  items: MarketplaceSkill[]
+  nextCursor: string | null
+  source: 'clawhub' | 'fallback'
+  query: string
+  sort: MarketplaceSort
+}
+
+// Backwards compatibility alias
+export type RecommendedSkill = MarketplaceSkill
+
 export async function getRecommendedSkills() {
-  return apiFetch<RecommendedSkill[]>('/api/registry/recommended')
+  return apiFetch<MarketplaceSkill[]>('/api/registry/recommended')
+}
+
+export async function getMarketplaceSkills(params: {
+  query?: string
+  cursor?: string | null
+  limit?: number
+  sort?: MarketplaceSort
+} = {}) {
+  const search = new URLSearchParams()
+  if (params.query) search.set('q', params.query)
+  if (params.cursor) search.set('cursor', params.cursor)
+  if (params.limit) search.set('limit', String(params.limit))
+  if (params.sort) search.set('sort', params.sort)
+  const suffix = search.toString() ? `?${search}` : ''
+  return apiFetch<MarketplacePage>(`/api/registry/marketplace${suffix}`)
+}
+
+export async function getMarketplaceSkill(slug: string) {
+  return apiFetch<MarketplaceSkillDetail>(`/api/registry/marketplace/${encodeURIComponent(slug)}`)
+}
+
+export async function searchRegistrySkills(query: string) {
+  return apiFetch<MarketplaceSkill[]>(`/api/registry/search?q=${encodeURIComponent(query)}`)
 }
 
 export async function installRecommendedSkill(slug: string) {
   return apiFetch<{ ok: boolean; error?: string }>('/api/registry/install', {
+    method: 'POST',
+    body: JSON.stringify({ slug }),
+  })
+}
+
+export async function updateMarketplaceSkill(slug: string) {
+  return apiFetch<{ ok: boolean; error?: string }>('/api/registry/update', {
     method: 'POST',
     body: JSON.stringify({ slug }),
   })

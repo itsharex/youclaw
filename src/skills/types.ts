@@ -68,7 +68,8 @@ export interface SkillRegistryMeta {
   source: string
   slug: string
   installedAt: string
-  displayName: string
+  displayName?: string
+  version?: string
 }
 
 /** Skills configuration */
