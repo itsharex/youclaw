@@ -18,8 +18,31 @@ env:
   CARGO_HOME: ${{ github.workspace }}/.cargo
 
 jobs:
+  # ── Create release first to avoid race condition ──
+  create-release:
+    runs-on: ubuntu-latest
+    name: Create Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "You Claw v${{ steps.version.outputs.VERSION }}" \
+            --notes "" \
+            --latest \
+            || echo "Release already exists"
+
   # ── macOS builds ──
   build-mac:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -113,6 +136,7 @@ jobs:
 
   # ── Windows build ──
   build-windows:
+    needs: create-release
     runs-on: windows-latest
     name: Build Windows x64
 
@@ -280,6 +304,7 @@ jobs:
   # To enable: 1) set if to true  2) add build-linux to updater job's needs
   #            3) add build-linux.result == 'success' to updater job's if condition
   build-linux:
+    needs: create-release
     if: ${{ false }}
     runs-on: ubuntu-22.04
     name: Build Linux x64
