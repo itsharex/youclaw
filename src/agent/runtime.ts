@@ -323,6 +323,7 @@ export class AgentRuntime {
       category: 'agent',
     }, 'SDK query started')
 
+    const cliPath = resolveCliPath()
     const queryOptions: Record<string, unknown> = {
       model,
       cwd,
@@ -330,9 +331,11 @@ export class AgentRuntime {
       abortController,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      pathToClaudeCodeExecutable: resolveCliPath(),
+      pathToClaudeCodeExecutable: cliPath,
+      executable: process.execPath,
       ...(existingSessionId ? { resume: existingSessionId } : {}),
     }
+    logger.info({ cliPath, executable: process.execPath, category: 'agent' }, 'SDK executable config')
 
     // Sub-agent config (compile ref references via AgentCompiler)
     if (this.config.agents) {
