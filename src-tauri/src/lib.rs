@@ -178,7 +178,11 @@ fn kill_sidecar(app: &AppHandle) {
         #[cfg(not(target_os = "windows"))]
         {
             let _ = child.kill();
-            log::info!("Sidecar process killed (PID: {})", pid);
+            // Also kill any child processes to prevent port leaks
+            let _ = std::process::Command::new("pkill")
+                .args(["-KILL", "-P", &pid.to_string()])
+                .output();
+            log::info!("Sidecar process tree killed (PID: {})", pid);
         }
     }
 }
@@ -216,9 +220,14 @@ async fn restart_sidecar(#[allow(unused)] app: AppHandle) -> Result<(), String> 
     #[cfg(not(debug_assertions))]
     {
         kill_sidecar(&app);
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
         let port = spawn_sidecar(&app)?;
-        wait_for_health(port, 30).await
+        wait_for_health(port, 30).await?;
+        let _ = app.emit("sidecar-event", SidecarEvent {
+            status: "ready".into(),
+            message: format!("Backend ready on port {}", port),
+        });
+        Ok(())
     }
 }
 
