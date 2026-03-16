@@ -52,7 +52,7 @@ export default function App() {
   const cloudEnabled = useAppStore((s) => s.cloudEnabled)
   const canPass = !cloudEnabled || isLoggedIn
 
-  // 持久监听 sidecar-event（Tauri 模式）
+  // Persistently listen for sidecar-event (Tauri mode)
   useEffect(() => {
     if (!isTauri) return
     let cleanup: (() => void) | null = null

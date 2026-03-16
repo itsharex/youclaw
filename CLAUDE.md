@@ -86,7 +86,7 @@ web/src/
 - Bun auto-loads `.env` files
 - Use Bun as package manager (`bun install`, `bun add`), not pnpm/npm
 - Commit messages follow Conventional Commits (English)
-- Code comments in Chinese
+- All code comments must be written in English
 - Agent config uses YAML format (`agent.yaml`), validated with Zod schema
 - Skills use Markdown + YAML frontmatter format (`SKILL.md`), 3-tier loading priority: Agent workspace > project `skills/` > `~/.youclaw/skills/`
 - Database migrations use try/catch ALTER TABLE pattern (no dedicated migration tool)

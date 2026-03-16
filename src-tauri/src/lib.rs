@@ -24,7 +24,7 @@ struct SidecarEvent {
 fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     let state = app.state::<SidecarState>();
 
-    // 读取用户配置的端口，未配置则使用默认 62601
+    // Read user-configured port, default to 62601 if not set
     let port: u16 = app.store("settings.json")
         .ok()
         .and_then(|store| store.get("preferredPort"))
@@ -33,7 +33,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
         .filter(|p| *p >= 1024)
         .unwrap_or(62601);
 
-    // 检测端口是否可用
+    // Check if port is available
     match TcpListener::bind(format!("127.0.0.1:{}", port)) {
         Ok(listener) => {
             drop(listener);
@@ -253,8 +253,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            // Windows: 第二个实例被启动时，args 包含 deep link URL
-            // 将 URL 转发给已运行的实例，并拉起窗口
+            // Windows: when a second instance is launched, args contain deep link URL
+            // Forward the URL to the running instance and bring its window to front
             log::info!("Single instance callback, args: {:?}", args);
             for arg in &args {
                 if arg.starts_with("youclaw://") {
@@ -325,14 +325,14 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // 监听 deep link 事件，转发给前端
+            // Listen for deep link events and forward to frontend
             let dl_handle = handle.clone();
             app.listen("deep-link://new-url", move |event: tauri::Event| {
                 if let Ok(urls) = serde_json::from_str::<Vec<String>>(event.payload()) {
                     if let Some(url) = urls.first() {
                         log::info!("Deep link received: {}", url);
                         let _ = dl_handle.emit("deep-link-received", url.clone());
-                        // 将窗口拉到前台
+                        // Bring window to foreground
                         if let Some(win) = dl_handle.get_webview_window("main") {
                             let _ = win.show();
                             let _ = win.set_focus();

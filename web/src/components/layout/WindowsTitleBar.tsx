@@ -1,7 +1,7 @@
 import { Minus, Square, X } from 'lucide-react'
 
 /**
- * Windows 自定义标题栏：拖拽区 + 最小化/最大化/关闭
+ * Windows custom title bar: drag region + minimize/maximize/close
  */
 export function WindowsTitleBar() {
   const handleMinimize = () => {
@@ -30,9 +30,9 @@ export function WindowsTitleBar() {
       className="h-8 shrink-0 flex items-center select-none"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
-      {/* 拖拽区占满 */}
+      {/* Drag region fills remaining space */}
       <div className="flex-1" />
-      {/* 窗口控制按钮 */}
+      {/* Window control buttons */}
       <div
         className="flex h-full shrink-0"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}

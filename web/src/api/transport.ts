@@ -10,7 +10,7 @@ export function getTauriInvoke(): (cmd: string, args?: Record<string, unknown>) 
 // Cache backend baseUrl to avoid repeated store reads
 let _cachedBaseUrl: string | null = null
 
-// 端口冲突状态
+// Port conflict status
 let _portConflict: string | null = null
 
 export function getPortConflict(): string | null {

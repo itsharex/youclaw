@@ -62,7 +62,16 @@ export function getActiveModelConfig(): { apiKey: string; baseUrl: string; model
         provider: 'builtin',
       }
     }
-    // Built-in model params not configured, falling back to env vars
+    // Built-in model params not injected at compile time, fall back to .env config
+    if (env.ANTHROPIC_API_KEY) {
+      return {
+        apiKey: env.ANTHROPIC_API_KEY,
+        baseUrl: env.ANTHROPIC_BASE_URL || '',
+        modelId: env.AGENT_MODEL,
+        provider: 'builtin',
+      }
+    }
+    // No config available at all, return null (agent features unavailable)
     return null
   }
 
@@ -79,5 +88,19 @@ export function getActiveModelConfig(): { apiKey: string; baseUrl: string; model
   }
 
   // Custom model not found, returning null to fall back to env vars
+  return null
+}
+
+/**
+ * Return the built-in model's modelId for frontend display
+ */
+export function getBuiltinModelId(): string | null {
+  const env = getEnv()
+  if (env.YOUCLAW_BUILTIN_API_URL && env.YOUCLAW_BUILTIN_AUTH_TOKEN) {
+    return 'claude-sonnet-4-6'
+  }
+  if (env.ANTHROPIC_API_KEY) {
+    return env.AGENT_MODEL
+  }
   return null
 }

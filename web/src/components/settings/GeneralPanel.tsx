@@ -113,7 +113,7 @@ export function GeneralPanel() {
         </div>
       </div>
 
-      {/* 服务端口 */}
+      {/* Server port */}
       <div>
         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
           {t.settings.serverPort}

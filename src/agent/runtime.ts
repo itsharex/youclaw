@@ -109,7 +109,7 @@ export class AgentRuntime {
         }
       }
 
-      // Read model config from Settings API first, fall back to env vars
+      // Read model config from Settings (built-in uses .env, custom requires user input)
       const modelConfig = getActiveModelConfig()
       let model = env.AGENT_MODEL
       if (modelConfig) {
@@ -118,23 +118,18 @@ export class AgentRuntime {
         process.env.ANTHROPIC_API_KEY = modelConfig.apiKey
         if (modelConfig.baseUrl) {
           process.env.ANTHROPIC_BASE_URL = modelConfig.baseUrl
-        }
-        logger.info({ provider: modelConfig.provider, model, baseUrl: modelConfig.baseUrl || '(default)' }, 'Model config loaded')
-      } else {
-        // 切回内置模型时，恢复环境变量原始值，避免 SDK 继续使用旧的自定义模型配置
-        if (env.ANTHROPIC_API_KEY) {
-          process.env.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY
-        }
-        // Restore ANTHROPIC_BASE_URL from .env if present, otherwise delete
-        if (env.ANTHROPIC_BASE_URL) {
-          process.env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL
         } else {
           delete process.env.ANTHROPIC_BASE_URL
         }
-        logger.info({ model, baseUrl: env.ANTHROPIC_BASE_URL || '(default)' }, 'Using env var model config')
+        logger.info({ provider: modelConfig.provider, model, baseUrl: modelConfig.baseUrl || '(default)' }, 'Model config loaded')
+      } else {
+        // No model config available, clear env vars to prevent using user's system env vars
+        delete process.env.ANTHROPIC_API_KEY
+        delete process.env.ANTHROPIC_BASE_URL
+        logger.warn('No model config available. Agent features will not work. Please configure a model in Settings.')
       }
 
-      // 将用户 auth token 注入到 SDK 请求 header 中
+      // Inject user auth token into SDK request headers
       const authToken = getAuthToken()
       if (authToken) {
         process.env.ANTHROPIC_CUSTOM_HEADERS = `rdxtoken: ${authToken}`
@@ -199,7 +194,7 @@ export class AgentRuntime {
 
       // Convert SDK internal errors to user-friendly messages
       const { message: userError, errorCode } = this.humanizeError(rawError)
-      logger.info({ agentId, chatId, errorCode, userError, category: 'agent' }, '错误码识别结果')
+      logger.info({ agentId, chatId, errorCode, userError, category: 'agent' }, 'Error code identification result')
 
       // on_error hook
       if (this.hooksManager) {
@@ -366,8 +361,8 @@ export class AgentRuntime {
         })
       }
     } catch (err) {
-      // SDK 进程崩溃时，fullText 中可能包含上游 API 返回的实际错误信息
-      // 将 fullText 附加到错误消息中，以便 humanizeError 能匹配到具体错误类型
+      // When SDK process crashes, fullText may contain actual error info from upstream API
+      // Append fullText to the error message so humanizeError can match specific error types
       const errMsg = err instanceof Error ? err.message : String(err)
       if (fullText.trim()) {
         throw new Error(`${errMsg} | upstream_response: ${fullText.trim().slice(0, 500)}`)

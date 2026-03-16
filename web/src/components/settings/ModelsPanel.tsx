@@ -27,6 +27,7 @@ export function ModelsPanel() {
   const { t } = useI18n()
   const { cloudEnabled } = useAppStore()
   const [builtinModel, setBuiltinModel] = useState("youclaw-pro")
+  const [builtinModelId, setBuiltinModelId] = useState<string | null>(null)
   const [customModels, setCustomModels] = useState<CustomModelDTO[]>([])
   const [activeModel, setActiveModel] = useState<ActiveModel>({ provider: "builtin" })
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -44,6 +45,9 @@ export function ModelsPanel() {
     getSettings().then((settings) => {
       setActiveModel(settings.activeModel)
       setCustomModels(settings.customModels)
+      if (settings.builtinModelId) {
+        setBuiltinModelId(settings.builtinModelId)
+      }
     }).catch(console.error)
   }, [])
 
@@ -83,9 +87,12 @@ export function ModelsPanel() {
     await saveSettings({ activeModel: newActive })
   }
 
-  // Select built-in model
+  // Select built-in model and switch provider
   const handleSelectBuiltin = async (id: string) => {
     setBuiltinModel(id)
+    const newActive: ActiveModel = { provider: "builtin" }
+    setActiveModel(newActive)
+    await saveSettings({ activeModel: newActive })
   }
 
   // Set custom model as active
@@ -272,9 +279,8 @@ export function ModelsPanel() {
             {BUILTIN_MODELS.map((model) => {
               const isActive = builtinModel === model.id && (activeModel.provider === "builtin" || activeModel.provider === "cloud")
               return (
-                <button
+                <div
                   key={model.id}
-                  onClick={() => handleSelectBuiltin(model.id)}
                   className={cn(
                     "w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all",
                     isActive
@@ -301,13 +307,22 @@ export function ModelsPanel() {
                           </span>
                         )}
                       </div>
-                      <div className="text-xs text-muted-foreground">{model.description}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {builtinModelId ?? model.description}
+                      </div>
                     </div>
                   </div>
-                  {isActive && (
-                    <div className="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
+                  {!isActive && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs rounded-lg"
+                      onClick={() => handleSelectBuiltin(model.id)}
+                    >
+                      {t.settings.setDefault}
+                    </Button>
                   )}
-                </button>
+                </div>
               )
             })}
           </div>

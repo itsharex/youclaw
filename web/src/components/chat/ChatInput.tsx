@@ -27,7 +27,7 @@ import { Bot, Globe, PlusIcon } from "lucide-react";
 
 const MAX_FILES = 5;
 
-// 直接打开文件浏览器的附件按钮
+// Attachment button that directly opens the file browser
 function AddAttachmentButton() {
   const attachments = usePromptInputAttachments();
   const isFull = attachments.files.length >= MAX_FILES;

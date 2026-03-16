@@ -368,7 +368,7 @@ export function Chat() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* 积分不足充值弹窗 */}
+      {/* Insufficient credits top-up dialog */}
       <InsufficientCreditsDialog
         open={chatCtx.showInsufficientCredits}
         onOpenChange={chatCtx.setShowInsufficientCredits}

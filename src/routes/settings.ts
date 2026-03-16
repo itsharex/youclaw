@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { getSettings, updateSettings, getActiveModelConfig } from '../settings/manager.ts'
+import { getSettings, updateSettings, getActiveModelConfig, getBuiltinModelId } from '../settings/manager.ts'
 import { getDatabase } from '../db/index.ts'
 
 const app = new Hono()
@@ -8,9 +8,13 @@ const app = new Hono()
 app.get('/settings', (c) => {
   const settings = getSettings()
 
+  // Get the actual modelId of the built-in model for frontend display
+  const builtinModelId = getBuiltinModelId()
+
   // Mask apiKey: keep only last 4 characters
   const masked = {
     ...settings,
+    builtinModelId,
     customModels: settings.customModels.map((m) => ({
       ...m,
       apiKey: m.apiKey ? `****${m.apiKey.slice(-4)}` : '',
@@ -67,14 +71,14 @@ app.get('/settings/active-model', (c) => {
   return c.json({ source: 'settings', ...config })
 })
 
-// GET /settings/port — 获取配置的端口（Web 模式）
+// GET /settings/port — get configured port (Web mode)
 app.get('/settings/port', (c) => {
   const db = getDatabase()
   const row = db.query("SELECT value FROM kv_state WHERE key = 'preferred_port'").get() as { value: string } | null
   return c.json({ port: row?.value || null })
 })
 
-// PUT /settings/port — 设置端口（Web 模式）
+// PUT /settings/port — set port (Web mode)
 app.put('/settings/port', async (c) => {
   const { port } = await c.req.json() as { port?: string | null }
   const db = getDatabase()

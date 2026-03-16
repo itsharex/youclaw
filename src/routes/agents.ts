@@ -123,7 +123,7 @@ export function createAgentsRoutes(agentManager: AgentManager) {
       return c.json({ error: 'Request body must include a "name" field (string)' }, 400)
     }
 
-    // 自动生成 id（如果未提供）
+    // Auto-generate id if not provided
     const id = (body.id && typeof body.id === 'string') ? body.id : crypto.randomUUID().slice(0, 8)
 
     // Validate id format: only alphanumeric, hyphens, and underscores allowed

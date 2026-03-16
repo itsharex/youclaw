@@ -55,7 +55,7 @@ export function AccountPanel() {
   const loadTransactions = async () => {
     setLoadingTx(true)
     try {
-      const data = await getCreditTransactions({ limit: 20 })
+      const data = await getCreditTransactions(20)
       setTransactions(Array.isArray(data) ? data : [])
     } catch {
       setTransactions([])
@@ -101,7 +101,7 @@ export function AccountPanel() {
       await redeemInvitationCode(invitationCode.trim())
       setRedeemResult({ success: true, message: t.account.redeemSuccess })
       setInvitationCode("")
-      // 刷新积分余额
+      // Refresh credit balance
       fetchCreditBalance()
     } catch (err: any) {
       setRedeemResult({ success: false, message: err?.message || t.account.redeemFailed })

@@ -48,11 +48,8 @@ export function createCreditRoutes() {
     }
 
     try {
-      // Forward pagination params
       const url = new URL(`${apiUrl}/api/credit/transactions`)
-      const page = c.req.query('page')
       const limit = c.req.query('limit')
-      if (page) url.searchParams.set('page', page)
       if (limit) url.searchParams.set('limit', limit)
 
       const res = await fetch(url.toString(), {
@@ -64,11 +61,54 @@ export function createCreditRoutes() {
       }
 
       const data = await res.json() as { success?: boolean; data?: unknown }
-      return c.json(data.data ?? { items: [], total: 0 })
+      return c.json(data.data ?? [])
     } catch (err) {
       const logger = getLogger()
       logger.error({ error: String(err), category: 'credit' }, 'Failed to fetch credit transactions')
       return c.json({ error: 'Failed to fetch transactions' }, 500)
+    }
+  })
+
+  // POST /invitation/redeem — redeem invitation/activation code
+  app.post('/invitation/redeem', async (c) => {
+    const apiUrl = getEnv().YOUCLAW_API_URL
+    if (!apiUrl) {
+      return c.json({ error: 'Cloud service not configured' }, 501)
+    }
+    const token = getAuthToken()
+    if (!token) {
+      return c.json({ error: 'Not logged in' }, 401)
+    }
+
+    try {
+      const body = await c.req.json() as { code?: string }
+      const code = body.code
+      if (!code) {
+        return c.json({ error: 'Code is required' }, 400)
+      }
+
+      // Java backend uses @RequestParam, so pass via query params
+      const url = new URL(`${apiUrl}/api/invitation/redeem`)
+      url.searchParams.set('code', code)
+
+      const res = await fetch(url.toString(), {
+        method: 'POST',
+        headers: { rdxtoken: token },
+      })
+
+      if (!res.ok) {
+        const text = await res.text()
+        const logger = getLogger()
+        logger.error({ status: res.status, body: text, category: 'invitation' }, 'Failed to redeem code')
+        return c.json({ error: 'Failed to redeem code' }, res.status as any)
+      }
+
+      const data = await res.json()
+      return c.json(data)
+    } catch (err) {
+      const logger = getLogger()
+      logger.error({ error: String(err), category: 'invitation' }, 'Failed to redeem invitation code')
+      return c.json({ error: 'Failed to redeem code' }, 500)
     }
   })
 

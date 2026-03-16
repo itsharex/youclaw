@@ -4,9 +4,19 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BUILD_CONSTANTS } from './build-constants.ts'
 
+// Model-related keys: always read from .env file, ignoring user's system env vars
+const DOTENV_OVERRIDE_KEYS = new Set([
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN', // Anthropic SDK compatible field, equivalent to ANTHROPIC_API_KEY
+  'ANTHROPIC_BASE_URL',
+  'AGENT_MODEL',
+])
+
 /**
- * Manually load .env file into process.env (does not override existing values).
- * Replaces Bun's automatic .env loading for Node.js/tsx runtime compatibility.
+ * Manually load .env file into process.env.
+ * Model-related keys (ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, AGENT_MODEL)
+ * always override system env vars to avoid picking up user shell config.
+ * Other keys do not override existing env vars.
  */
 function loadDotEnv(): void {
   const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -17,6 +27,11 @@ function loadDotEnv(): void {
     content = readFileSync(envPath, 'utf-8')
   } catch {
     return // .env not found, skip
+  }
+
+  // Clear model-related system env vars first to prevent inheriting from user shell
+  for (const key of DOTENV_OVERRIDE_KEYS) {
+    delete process.env[key]
   }
 
   for (const line of content.split('\n')) {
@@ -35,8 +50,9 @@ function loadDotEnv(): void {
       value = value.slice(1, -1)
     }
 
-    // Do not override existing env vars (system/CLI settings take priority)
-    if (!(key in process.env)) {
+    // Model-related keys always read from .env; other keys do not override existing env vars
+    // Empty values are not written to avoid overriding Zod optional defaults
+    if (value && (!(key in process.env) || DOTENV_OVERRIDE_KEYS.has(key))) {
       process.env[key] = value
     }
   }
@@ -78,6 +94,11 @@ export function loadEnv(): EnvConfig {
 
   // Node.js/tsx does not auto-load .env; load manually
   loadDotEnv()
+
+  // ANTHROPIC_AUTH_TOKEN is equivalent to ANTHROPIC_API_KEY, unify to ANTHROPIC_API_KEY
+  if (!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_AUTH_TOKEN) {
+    process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_AUTH_TOKEN
+  }
 
   // Build-time constant injection: build-sidecar.mjs generates build-constants.ts
   // with compile-time env vars as a plain JS object, merged into process.env here

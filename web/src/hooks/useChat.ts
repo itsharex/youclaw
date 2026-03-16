@@ -34,7 +34,7 @@ export function useChat(agentId: string) {
 
   // Track last SSE event time for timeout fallback
   const lastEventTimeRef = useRef<number>(0)
-  // 标记 SSE 已经处理过错误，防止 send() catch 重复添加消息
+  // Flag that SSE has already handled the error, preventing send() catch from adding duplicate messages
   const sseErrorHandledRef = useRef(false)
 
   const { close: closeSSE } = useSSE(chatId, (event) => {
@@ -76,7 +76,7 @@ export function useChat(agentId: string) {
         setTimeout(() => setChatStatus('ready'), 2000)
         if (event.errorCode === 'INSUFFICIENT_CREDITS') {
           setShowInsufficientCredits(true)
-          // 积分不足：用 errorCode 标记，由 AssistantMessage 渲染国际化内容
+          // Insufficient credits: mark with errorCode, rendered as i18n content by AssistantMessage
           setMessages(prev => [...prev, {
             id: Date.now().toString(),
             role: 'assistant',
@@ -167,7 +167,7 @@ export function useChat(agentId: string) {
     try {
       await sendMessage(agentId, prompt, effectiveChatId, browserProfileId, attachments)
     } catch (err) {
-      // SSE 已经处理过错误，跳过避免重复消息
+      // SSE already handled the error, skip to avoid duplicate messages
       if (sseErrorHandledRef.current) {
         sseErrorHandledRef.current = false
         return

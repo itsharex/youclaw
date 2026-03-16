@@ -460,12 +460,8 @@ export async function getCreditBalance() {
   return apiFetch<CreditBalance>('/api/credit/balance')
 }
 
-export async function getCreditTransactions(params?: { page?: number; limit?: number }) {
-  const qs = new URLSearchParams()
-  if (params?.page) qs.set('page', String(params.page))
-  if (params?.limit) qs.set('limit', String(params.limit))
-  const q = qs.toString()
-  return apiFetch<CreditTransaction[]>(`/api/credit/transactions${q ? `?${q}` : ''}`)
+export async function getCreditTransactions(limit = 50) {
+  return apiFetch<CreditTransaction[]>(`/api/credit/transactions?limit=${limit}`)
 }
 
 // ===== Port Config API (Web mode) =====
@@ -498,6 +494,7 @@ export interface SettingsDTO {
     id?: string
   }
   customModels: CustomModelDTO[]
+  builtinModelId?: string | null
 }
 
 export async function getSettings() {

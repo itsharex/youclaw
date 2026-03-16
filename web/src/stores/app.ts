@@ -288,7 +288,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
     applyThemeToDOM(resolvedTheme)
 
-    // 读取端口配置和冲突状态
+    // Read port config and conflict status
     const conflict = getPortConflict()
     if (conflict) {
       set({ portConflict: conflict })
@@ -300,14 +300,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         const preferredPort = await store.get<string>('preferredPort')
         if (preferredPort) set({ preferredPort })
       } catch {
-        // Store 不可用时忽略
+        // Ignore when Store is unavailable
       }
     } else {
       try {
         const { port } = await getPortConfig()
         if (port) set({ preferredPort: port })
       } catch {
-        // 后端未就绪时忽略
+        // Ignore when backend is not ready
       }
     }
 
