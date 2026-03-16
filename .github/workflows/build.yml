@@ -206,7 +206,7 @@ jobs:
             echo "Waiting for release... ($i/30)"
             sleep 10
           done
-          gh release download "$TAG" -R "$REPO" --dir unsigned --pattern "*.exe" --pattern "*.nsis.zip" --pattern "*.nsis.zip.sig"
+          gh release download "$TAG" -R "$REPO" --dir unsigned --pattern "*.exe" --pattern "*.exe.sig" --pattern "*.nsis.zip" --pattern "*.nsis.zip.sig"
 
       - name: Sign exe with USB token
         shell: bash
@@ -215,7 +215,16 @@ jobs:
           echo "Signing: $EXE_PATH"
           sign.sh "$EXE_PATH"
 
-      - name: Re-package signed nsis.zip and regenerate signature
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Tauri CLI for re-signing
+        shell: bash
+        run: npm install -g @tauri-apps/cli@latest
+
+      - name: Re-package signed nsis.zip and regenerate all signatures
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -225,7 +234,11 @@ jobs:
           NSIS_ZIP="unsigned/You.Claw_${VERSION}_x64-setup.nsis.zip"
           EXE_PATH=$(ls unsigned/*.exe | head -1)
 
-          # Replace exe in zip with signed version
+          # Regenerate .exe.sig for the code-signed exe
+          echo "Regenerating .exe.sig for code-signed exe..."
+          npx tauri signer sign "$EXE_PATH" --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+
+          # Replace exe in zip with signed version, then regenerate .nsis.zip.sig
           if [ -f "$NSIS_ZIP" ]; then
             cd unsigned
             unzip -o "$(basename "$NSIS_ZIP")" -d nsis_tmp
@@ -235,10 +248,8 @@ jobs:
             cd ../..
             rm -rf unsigned/nsis_tmp
 
-            # Regenerate .sig for the modified nsis.zip using Tauri CLI
-            npm install -g @tauri-apps/cli@latest
+            echo "Regenerating .nsis.zip.sig for re-packaged nsis.zip..."
             npx tauri signer sign "$NSIS_ZIP" --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
-            echo "Regenerated signature for $(basename "$NSIS_ZIP")"
           fi
 
       - name: Upload signed artifacts to release
@@ -248,7 +259,7 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           REPO="${{ github.repository }}"
-          for f in unsigned/*.exe unsigned/*.nsis.zip unsigned/*.nsis.zip.sig; do
+          for f in unsigned/*.exe unsigned/*.exe.sig unsigned/*.nsis.zip unsigned/*.nsis.zip.sig; do
             [ ! -f "$f" ] && continue
             echo "Uploading: $(basename "$f")"
             gh release upload "$TAG" "$f" -R "$REPO" --clobber
@@ -430,10 +441,10 @@ jobs:
                   --arg sig "$SIG" --arg url "$URL" \
                   '. + {"darwin-x86_64": {"signature": $sig, "url": $url}, "darwin-x86_64-app": {"signature": $sig, "url": $url}}')
                 ;;
-              *_x64-setup.exe.sig)
+              *_x64-setup.nsis.zip.sig)
                 PLATFORMS=$(echo "$PLATFORMS" | jq \
                   --arg sig "$SIG" \
-                  --arg url "${CDN_BASE}/You.Claw_${VERSION}_x64-setup.exe" \
+                  --arg url "${CDN_BASE}/You.Claw_${VERSION}_x64-setup.nsis.zip" \
                   '. + {"windows-x86_64": {"signature": $sig, "url": $url}, "windows-x86_64-nsis": {"signature": $sig, "url": $url}}')
                 ;;
               *_x64_en-US.msi.sig)
