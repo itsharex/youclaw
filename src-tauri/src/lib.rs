@@ -10,7 +10,6 @@ use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
 use std::sync::Mutex;
 use std::time::Duration;
-use std::net::TcpListener;
 
 /// Sidecar child process handle
 struct SidecarState(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
@@ -25,22 +24,12 @@ struct SidecarEvent {
 fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     let state = app.state::<SidecarState>();
 
-    // Bind to port 0 to let the OS assign a random available port
-    let port: u16 = match TcpListener::bind("127.0.0.1:0") {
-        Ok(listener) => {
-            let port = listener.local_addr().unwrap().port();
-            drop(listener);
-            log::info!("Using random available port {}", port);
-            port
-        }
-        Err(e) => {
-            let _ = app.emit("sidecar-event", SidecarEvent {
-                status: "error".into(),
-                message: format!("Failed to find available port: {}", e),
-            });
-            return Err(format!("Failed to find available port: {}", e));
-        }
-    };
+    // Read preferred port from Tauri Store, default 62601
+    let port: u16 = app.store("settings.json").ok()
+        .and_then(|store| store.get("preferred_port"))
+        .and_then(|v| v.as_str().and_then(|s| s.parse::<u16>().ok()))
+        .unwrap_or(62601);
+    log::info!("Using port {} (from store or default)", port);
 
     // Model config (API Key, Base URL, Model ID) is now managed by the backend
     // via Settings API (SQLite kv_state), no longer injected from Tauri Store.
@@ -121,7 +110,14 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
                     log::info!("[sidecar] {}", String::from_utf8_lossy(&line));
                 }
                 tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
-                    log::warn!("[sidecar] {}", String::from_utf8_lossy(&line));
+                    let line_str = String::from_utf8_lossy(&line);
+                    log::warn!("[sidecar] {}", line_str);
+                    if line_str.contains("[PORT_CONFLICT]") {
+                        let _ = app_for_events.emit("sidecar-event", SidecarEvent {
+                            status: "port-conflict".into(),
+                            message: line_str.to_string(),
+                        });
+                    }
                 }
                 tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
                     log::error!("[sidecar] terminated with code: {:?}", payload.code);
@@ -205,6 +201,18 @@ fn get_platform() -> String {
 }
 
 #[tauri::command]
+async fn set_preferred_port(app: AppHandle, port: u16) -> Result<(), String> {
+    if port < 1024 {
+        return Err("Port must be between 1024 and 65535".into());
+    }
+    if let Ok(store) = app.store("settings.json") {
+        let _ = store.set("preferred_port", serde_json::Value::String(port.to_string()));
+        let _ = store.save();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn restart_sidecar(app: AppHandle) -> Result<(), String> {
     kill_sidecar(&app);
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -255,6 +263,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_version,
             get_platform,
+            set_preferred_port,
             restart_sidecar,
         ])
         .setup(|app| {
@@ -349,18 +358,23 @@ pub fn run() {
                 }
                 #[cfg(debug_assertions)]
                 {
-                    // Dev mode: read PORT from .env and write it to store for frontend use
-                    port = std::fs::read_to_string(
-                        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.env")
-                    )
-                    .ok()
-                    .and_then(|content| {
-                        content.lines()
-                            .find(|l| l.starts_with("PORT="))
-                            .and_then(|l| l.strip_prefix("PORT="))
-                            .and_then(|v| v.trim().parse::<u16>().ok())
-                    })
-                    .unwrap_or(62601);
+                    // Dev mode: prefer preferred_port from Store, then PORT from .env, then default
+                    port = app_handle.store("settings.json").ok()
+                        .and_then(|store| store.get("preferred_port"))
+                        .and_then(|v| v.as_str().and_then(|s| s.parse::<u16>().ok()))
+                        .or_else(|| {
+                            std::fs::read_to_string(
+                                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.env")
+                            )
+                            .ok()
+                            .and_then(|content| {
+                                content.lines()
+                                    .find(|l| l.starts_with("PORT="))
+                                    .and_then(|l| l.strip_prefix("PORT="))
+                                    .and_then(|v| v.trim().parse::<u16>().ok())
+                            })
+                        })
+                        .unwrap_or(62601);
 
                     if let Ok(store) = app_handle.store("settings.json") {
                         let _ = store.set("port", serde_json::Value::String(port.to_string()));
