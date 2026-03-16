@@ -46,13 +46,36 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     {
         let current_path = std::env::var("PATH").unwrap_or_default();
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/default".into());
-        let extra_paths = [
+        let mut extra_paths: Vec<String> = vec![
             format!("{}/.bun/bin", home),
             format!("{}/.cargo/bin", home),
-            format!("{}/.nvm/current/bin", home),
             "/usr/local/bin".into(),
             "/opt/homebrew/bin".into(),
         ];
+
+        // Resolve nvm's actual node bin path (nvm does not create ~/.nvm/current)
+        let nvm_alias_path = format!("{}/.nvm/alias/default", home);
+        if let Ok(alias) = std::fs::read_to_string(&nvm_alias_path) {
+            let version_prefix = alias.trim();
+            let nvm_versions_dir = format!("{}/.nvm/versions/node", home);
+            if let Ok(entries) = std::fs::read_dir(&nvm_versions_dir) {
+                let mut matched: Option<String> = None;
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let stripped = name.strip_prefix('v').unwrap_or(&name);
+                    if stripped.starts_with(version_prefix)
+                        || name == version_prefix
+                        || name == format!("v{}", version_prefix)
+                    {
+                        matched = Some(name);
+                    }
+                }
+                if let Some(ver) = matched {
+                    extra_paths.push(format!("{}/{}/bin", nvm_versions_dir, ver));
+                }
+            }
+        }
+
         let mut path_parts: Vec<&str> = current_path.split(':').collect();
         for p in &extra_paths {
             if !path_parts.contains(&p.as_str()) {
