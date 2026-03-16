@@ -909,14 +909,6 @@ export class AgentRuntime {
     if (/ECONNREFUSED|ENOTFOUND|fetch failed|network/i.test(raw)) {
       return { message: 'Cannot reach the model API. Please check your network connection and Base URL.', errorCode: ErrorCode.NETWORK_ERROR }
     }
-    // CLI startup blocked by macOS Gatekeeper / quarantine
-    if (/subprocess failed immediately|quarantine/i.test(raw)) {
-      return { message: 'Agent CLI blocked by macOS Gatekeeper. Try re-installing the app or run: xattr -cr /Applications/YouClaw.app', errorCode: ErrorCode.CLI_BLOCKED }
-    }
-    // CLI binary not found / corrupted install
-    if (/cli\.js.*not found|not found.*cli\.js/i.test(raw)) {
-      return { message: 'Agent CLI binary not found. The installation may be corrupted — please reinstall.', errorCode: ErrorCode.CLI_BLOCKED }
-    }
     // SDK process crash (fallback — last to avoid masking specific errors in upstream_response)
     if (/process exited with code/i.test(raw)) {
       return { message: 'Model connection failed. Please check your model configuration (API Key, Base URL) in Settings → Models.', errorCode: ErrorCode.MODEL_CONNECTION_FAILED }
