@@ -21,6 +21,7 @@ struct SidecarEvent {
 }
 
 /// Spawn the sidecar backend
+#[allow(dead_code)]
 fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     let state = app.state::<SidecarState>();
 
@@ -213,7 +214,7 @@ async fn set_preferred_port(app: AppHandle, port: u16) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn restart_sidecar(app: AppHandle) -> Result<(), String> {
+async fn restart_sidecar(#[allow(unused)] app: AppHandle) -> Result<(), String> {
     #[cfg(debug_assertions)]
     {
         return Err("Dev mode: please restart 'bun dev:tauri' manually to apply port changes.".into());
