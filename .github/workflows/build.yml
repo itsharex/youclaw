@@ -215,6 +215,11 @@ jobs:
           echo "Signing: $EXE_PATH"
           sign.sh "$EXE_PATH"
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Install Tauri CLI for re-signing
         shell: bash
         run: npm install -g @tauri-apps/cli@latest
