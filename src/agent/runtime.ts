@@ -643,11 +643,11 @@ export class AgentRuntime {
       // Priority 1: Bundled MinGit in resources directory
       const resourcesDir = process.env.RESOURCES_DIR
       if (resourcesDir) {
-        // MinGit busybox variant has bash.exe at mingw64/bin/bash.exe
         const mingitCandidates = [
-          resolve(resourcesDir, 'mingit', 'mingw64', 'bin', 'bash.exe'),
-          resolve(resourcesDir, '_up_', 'src-tauri', 'resources', 'mingit', 'mingw64', 'bin', 'bash.exe'),
+          resolve(resourcesDir, 'mingit', 'usr', 'bin', 'bash.exe'),
+          resolve(resourcesDir, '_up_', 'src-tauri', 'resources', 'mingit', 'usr', 'bin', 'bash.exe'),
         ]
+        logger.info({ resourcesDir, mingitCandidates, category: 'agent' }, 'Checking bundled MinGit candidates')
         for (const candidate of mingitCandidates) {
           if (existsSync(candidate)) {
             logger.info({ path: candidate, category: 'agent' }, 'Bundled MinGit detected on Windows')
@@ -655,6 +655,8 @@ export class AgentRuntime {
             break
           }
         }
+      } else {
+        logger.warn({ category: 'agent' }, 'RESOURCES_DIR not set, cannot check bundled MinGit')
       }
 
       // Priority 2: System Git installation
