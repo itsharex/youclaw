@@ -173,6 +173,72 @@ describe('agents routes', () => {
     expect(yaml.trigger).toBe('^@bot')
   })
 
+  test('PUT /agents/:id can set skills to wildcard ["*"] and back to []', async () => {
+    const manager = await createRealManager()
+    const app = createAgentsRoutes(manager)
+    const agentId = createAgentId('route-skills')
+
+    await app.request('/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: agentId, name: 'Skills Agent' }),
+    })
+
+    // Initially skills: []
+    const initial = parseYaml(readFileSync(resolve(getAgentDir(agentId), 'agent.yaml'), 'utf-8')) as Record<string, unknown>
+    expect(initial.skills).toEqual([])
+
+    // Set skills to ["*"] (Select All)
+    const wildRes = await app.request(`/agents/${agentId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills: ['*'] }),
+    })
+    const wildBody = await wildRes.json() as { skills: string[] }
+    const wildYaml = parseYaml(readFileSync(resolve(getAgentDir(agentId), 'agent.yaml'), 'utf-8')) as Record<string, unknown>
+
+    expect(wildRes.status).toBe(200)
+    expect(wildBody.skills).toEqual(['*'])
+    expect(wildYaml.skills).toEqual(['*'])
+
+    // Set skills back to [] (Deselect All)
+    const emptyRes = await app.request(`/agents/${agentId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills: [] }),
+    })
+    const emptyBody = await emptyRes.json() as { skills: string[] }
+    const emptyYaml = parseYaml(readFileSync(resolve(getAgentDir(agentId), 'agent.yaml'), 'utf-8')) as Record<string, unknown>
+
+    expect(emptyRes.status).toBe(200)
+    expect(emptyBody.skills).toEqual([])
+    expect(emptyYaml.skills).toEqual([])
+  })
+
+  test('PUT /agents/:id can set skills to specific skill names', async () => {
+    const manager = await createRealManager()
+    const app = createAgentsRoutes(manager)
+    const agentId = createAgentId('route-skills-specific')
+
+    await app.request('/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: agentId, name: 'Specific Skills Agent' }),
+    })
+
+    const res = await app.request(`/agents/${agentId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills: ['apple-notes', 'hello-world'] }),
+    })
+    const body = await res.json() as { skills: string[] }
+    const yaml = parseYaml(readFileSync(resolve(getAgentDir(agentId), 'agent.yaml'), 'utf-8')) as Record<string, unknown>
+
+    expect(res.status).toBe(200)
+    expect(body.skills).toEqual(['apple-notes', 'hello-world'])
+    expect(yaml.skills).toEqual(['apple-notes', 'hello-world'])
+  })
+
   test('DELETE /agents/:id forbids deleting default, allows deleting regular agent', async () => {
     const manager = await createRealManager()
     const app = createAgentsRoutes(manager)

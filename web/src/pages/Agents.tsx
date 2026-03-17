@@ -21,6 +21,12 @@ import { SidePanel } from '@/components/layout/SidePanel'
 import { MarketplaceCard } from '@/components/MarketplaceCard'
 import { useDragRegion } from "@/hooks/useDragRegion"
 
+enum MarketplaceAction {
+  Install = 'install',
+  Bind = 'bind',
+  Bound = 'bound',
+}
+
 type AgentState = {
   sessionId: string | null
   isProcessing: boolean
@@ -817,23 +823,11 @@ function AgentSkillsSection({
     onUpdate()
   }
 
-  const handleToggleAll = async () => {
-    const isWildcard = agentSkills?.includes('*')
-    if (allSelected) {
-      // Deselect all visible
-      const visible = new Set(filteredSkills.map(s => s.name))
-      const expanded = isWildcard ? allSkills.map(s => s.name) : (agentSkills ?? [])
-      const next = expanded.filter(s => !visible.has(s))
-      await updateAgentConfig(agentId, { skills: next })
+  const handleToggleAll = async (checked: boolean | 'indeterminate') => {
+    if (checked === true) {
+      await updateAgentConfig(agentId, { skills: ['*'] })
     } else {
-      // Select all visible
-      const expanded = isWildcard ? allSkills.map(s => s.name) : (agentSkills ?? [])
-      const current = new Set(expanded)
-      const next = [...current]
-      for (const s of filteredSkills) {
-        if (!current.has(s.name)) next.push(s.name)
-      }
-      await updateAgentConfig(agentId, { skills: next })
+      await updateAgentConfig(agentId, { skills: [] })
     }
     onUpdate()
   }
@@ -841,29 +835,24 @@ function AgentSkillsSection({
   const [expanded, setExpanded] = useState(false)
   const selectedCount = selectedSet.size
 
-  // Load recommended skills when entering marketplace mode
-  const loadMarketplaceInitial = useCallback(() => {
-    setMarketplaceLoading(true)
-    setMarketplaceError(null)
-    getRecommendedSkills()
-      .then((items) => {
-        setMarketplaceResults(items)
-        setNextCursor(null)
-      })
-      .catch(() => {
-        setMarketplaceResults([])
-        setMarketplaceError(t.agents.marketplaceError)
-      })
-      .finally(() => setMarketplaceLoading(false))
-  }, [t.agents.marketplaceError])
-
-  // Search marketplace with debounce
+  // Load recommended skills initially, search marketplace on query change
   useEffect(() => {
     if (!marketplaceOpen) return
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
 
     if (!marketplaceQuery.trim()) {
-      loadMarketplaceInitial()
+      setMarketplaceLoading(true)
+      setMarketplaceError(null)
+      getRecommendedSkills()
+        .then((skills) => {
+          setMarketplaceResults(skills)
+          setNextCursor(null)
+        })
+        .catch(() => {
+          setMarketplaceResults([])
+          setMarketplaceError(t.agents.marketplaceError)
+        })
+        .finally(() => setMarketplaceLoading(false))
       return
     }
 
@@ -883,7 +872,7 @@ function AgentSkillsSection({
     }, 300)
 
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
-  }, [marketplaceOpen, marketplaceQuery, loadMarketplaceInitial, t.agents.marketplaceError])
+  }, [marketplaceOpen, marketplaceQuery, t.agents.marketplaceError])
 
   const handleLoadMore = () => {
     if (!nextCursor) return
@@ -912,16 +901,15 @@ function AgentSkillsSection({
     setMarketplaceError(null)
   }
 
-  const installedSkillNames = new Set(allSkills.map(s => s.name))
-
   const handleInstallAndBind = async (slug: string) => {
     setInstallingSlug(slug)
     try {
+      const beforeNames = new Set(allSkills.map(s => s.name))
       await installRecommendedSkill(slug)
       // Refresh skills list
       const freshSkills = await getSkills()
       // Find the newly installed skill by diffing
-      const newSkill = freshSkills.find(s => !installedSkillNames.has(s.name))
+      const newSkill = freshSkills.find(s => !beforeNames.has(s.name))
       if (newSkill && !isWildcard) {
         const current = agentSkills ?? []
         if (!current.includes(newSkill.name)) {
@@ -943,12 +931,12 @@ function AgentSkillsSection({
   }
 
   // Determine action button state for a marketplace skill
-  const getMarketplaceAction = (skill: MarketplaceSkill): 'installed' | 'bound' | 'bind' | 'install' => {
-    if (isWildcard) return 'installed'
-    if (installedSkillNames.has(skill.slug)) {
-      return selectedSet.has(skill.slug) ? 'bound' : 'bind'
+  const getMarketplaceAction = (skill: MarketplaceSkill): MarketplaceAction => {
+    if (skill.installed) {
+      if (isWildcard) return MarketplaceAction.Bound
+      return selectedSet.has(skill.slug) ? MarketplaceAction.Bound : MarketplaceAction.Bind
     }
-    return 'install'
+    return MarketplaceAction.Install
   }
 
   return (
@@ -979,16 +967,19 @@ function AgentSkillsSection({
               onChange={(e) => setSearch(e.target.value)}
               className="h-8 text-xs flex-1"
             />
-            <label className="flex items-center gap-2 cursor-pointer shrink-0">
+            <div
+              className="flex items-center gap-2 shrink-0 cursor-pointer"
+              role="button"
+              onClick={() => handleToggleAll(!(isWildcard || allSelected))}
+            >
               <Checkbox
-                checked={allSelected}
-                {...(someSelected && !allSelected ? { 'data-state': 'indeterminate' } : {})}
-                onCheckedChange={handleToggleAll}
+                checked={isWildcard || allSelected}
+                {...(!isWildcard && someSelected && !allSelected ? { 'data-state': 'indeterminate' } : {})}
+                tabIndex={-1}
+                className="pointer-events-none"
               />
-              <span className="text-xs text-muted-foreground">
-                {allSelected ? t.agents.skillsDeselectAll : t.agents.skillsSelectAll}
-              </span>
-            </label>
+              <span className="text-xs text-muted-foreground">{t.agents.skillsSelectAll}</span>
+            </div>
           </div>
 
           {filteredSkills.length === 0 ? (
@@ -996,13 +987,17 @@ function AgentSkillsSection({
           ) : (
             <div className="space-y-1 max-h-60 overflow-y-auto">
               {filteredSkills.map(skill => (
-                <label
+                <div
                   key={skill.name}
+                  role="button"
                   className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent/50 cursor-pointer"
+                  onClick={() => { if (!isWildcard) handleToggleSkill(skill.name, !selectedSet.has(skill.name)) }}
                 >
                   <Checkbox
                     checked={selectedSet.has(skill.name)}
-                    onCheckedChange={(checked) => handleToggleSkill(skill.name, !!checked)}
+                    disabled={isWildcard}
+                    tabIndex={-1}
+                    className="pointer-events-none"
                   />
                   <div className="flex-1 min-w-0">
                     <span className="text-sm">{skill.name}</span>
@@ -1010,7 +1005,7 @@ function AgentSkillsSection({
                       <span className="text-xs text-muted-foreground ml-2">{skill.frontmatter.description}</span>
                     )}
                   </div>
-                </label>
+                </div>
               ))}
             </div>
           )}
@@ -1060,11 +1055,9 @@ function AgentSkillsSection({
                         <Loader2 className="h-3 w-3 animate-spin mr-1" />
                         {t.agents.installingSkill}
                       </Button>
-                    ) : action === 'installed' ? (
-                      <span className="text-xs text-muted-foreground">{t.agents.skillInstalled} &#10003;</span>
-                    ) : action === 'bound' ? (
+                    ) : action === MarketplaceAction.Bound ? (
                       <span className="text-xs text-muted-foreground">{t.agents.skillBound} &#10003;</span>
-                    ) : action === 'bind' ? (
+                    ) : action === MarketplaceAction.Bind ? (
                       <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => handleBindSkill(skill.slug)}>
                         {t.agents.bindSkill}
                       </Button>
