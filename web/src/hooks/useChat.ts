@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { sendMessage, getMessages } from '../api/client'
+import { sendMessage, getMessages, abortChat } from '../api/client'
 import { useSSE } from './useSSE'
 import type { Attachment } from '../types/attachment'
 
@@ -225,11 +225,15 @@ export function useChat(agentId: string) {
   }, [])
 
   const stop = useCallback(() => {
+    // Fire-and-forget backend abort — UI responds immediately
+    if (chatId) {
+      abortChat(chatId).catch(() => {})
+    }
     closeSSE()
     setIsProcessing(false)
     setStreamingText('')
     setPendingToolUse([])
-  }, [closeSSE])
+  }, [chatId, closeSSE])
 
   return { chatId, messages, streamingText, isProcessing, pendingToolUse, chatStatus, send, loadChat, newChat, stop, showInsufficientCredits, setShowInsufficientCredits }
 }

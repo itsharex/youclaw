@@ -12,6 +12,7 @@ import type { PromptBuilder } from './prompt-builder.ts'
 import type { AgentCompiler } from './compiler.ts'
 import type { HooksManager } from './hooks.ts'
 import { resolveMcpServers } from './mcp-utils.ts'
+import { abortRegistry } from './abort-registry.ts'
 import { getActiveModelConfig } from '../settings/manager.ts'
 import { getAuthToken } from '../routes/auth.ts'
 import type { AgentConfig, ProcessParams } from './types.ts'
@@ -565,6 +566,7 @@ export class AgentRuntime {
   ): Promise<{ fullText: string; sessionId: string }> {
     const logger = getLogger()
     const abortController = new AbortController()
+    abortRegistry.register(chatId, abortController)
     let fullText = ''
     let sessionId = existingSessionId ?? ''
 
@@ -715,6 +717,8 @@ export class AgentRuntime {
       })
     }
 
+    abortRegistry.setQuery(chatId, q as AsyncIterable<unknown> & { close?: () => void })
+
     // Stream-process SDK messages with first-message timeout
     logger.info({ agentId, chatId, category: 'agent' }, 'SDK query created, starting to consume messages')
     let firstMessageReceived = false
@@ -784,6 +788,12 @@ export class AgentRuntime {
         })
       }
     } catch (err) {
+      // User-initiated abort — return partial text gracefully instead of throwing
+      if (abortController.signal.aborted) {
+        logger.info({ agentId, chatId, category: 'agent' }, 'SDK query aborted by user, returning partial text')
+        return { fullText, sessionId }
+      }
+
       // When SDK process crashes, fullText may contain actual error info from upstream API
       const errMsg = err instanceof Error ? err.message : String(err)
       const timeSinceStart = Date.now() - queryStartTime
@@ -795,7 +805,8 @@ export class AgentRuntime {
         durationMs: timeSinceStart,
         firstMessageReceived,
         cliPath,
-        executable: process.execPath,
+        executable,
+        processExecPath: process.execPath,
         cwd,
         model,
         hasApiKey: !!process.env.ANTHROPIC_API_KEY,
@@ -833,6 +844,7 @@ export class AgentRuntime {
       if (firstMessageTimer) {
         clearTimeout(firstMessageTimer)
       }
+      abortRegistry.unregister(chatId)
     }
 
     logger.info({

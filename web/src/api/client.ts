@@ -32,6 +32,13 @@ export async function getMessages(chatId: string) {
   return apiFetch<Array<{ id: string; chat_id: string; sender: string; sender_name: string; content: string; timestamp: string; is_from_me: number; is_bot_message: number; attachments: Attachment[] | null }>>(`/api/chats/${encodeURIComponent(chatId)}/messages`)
 }
 
+// Abort a running chat query
+export async function abortChat(chatId: string) {
+  return apiFetch<{ ok: boolean; aborted: boolean }>(`/api/chats/${encodeURIComponent(chatId)}/abort`, {
+    method: 'POST',
+  })
+}
+
 // Delete chat
 export async function deleteChat(chatId: string) {
   return apiFetch<{ ok: boolean }>(`/api/chats/${encodeURIComponent(chatId)}`, {
@@ -661,6 +668,7 @@ export async function getLogEntries(date: string, params?: {
   search?: string
   offset?: number
   limit?: number
+  order?: 'asc' | 'desc'
 }) {
   const qs = new URLSearchParams()
   if (params?.level) qs.set('level', params.level)
@@ -668,6 +676,7 @@ export async function getLogEntries(date: string, params?: {
   if (params?.search) qs.set('search', params.search)
   if (params?.offset !== undefined) qs.set('offset', String(params.offset))
   if (params?.limit !== undefined) qs.set('limit', String(params.limit))
+  if (params?.order) qs.set('order', params.order)
   const q = qs.toString()
   return apiFetch<LogQueryResult>(`/api/logs/${date}${q ? `?${q}` : ''}`)
 }

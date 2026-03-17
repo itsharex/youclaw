@@ -42,47 +42,80 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
         env_vars.push(("DATA_DIR".into(), app_data.to_string_lossy().to_string()));
     }
 
-    // Ensure PATH includes common bun/node install paths (PATH is minimal when launched from Finder)
+    // Ensure PATH includes common bun/node install paths (PATH is minimal when launched from Finder/Explorer)
     {
         let current_path = std::env::var("PATH").unwrap_or_default();
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/default".into());
-        let mut extra_paths: Vec<String> = vec![
-            format!("{}/.bun/bin", home),
-            format!("{}/.cargo/bin", home),
-            "/usr/local/bin".into(),
-            "/opt/homebrew/bin".into(),
-        ];
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_else(|_| {
+                if cfg!(target_os = "windows") { "C:\\Users\\Default".into() }
+                else { "/Users/default".into() }
+            });
 
-        // Resolve nvm's actual node bin path (nvm does not create ~/.nvm/current)
-        let nvm_alias_path = format!("{}/.nvm/alias/default", home);
-        if let Ok(alias) = std::fs::read_to_string(&nvm_alias_path) {
-            let version_prefix = alias.trim();
-            let nvm_versions_dir = format!("{}/.nvm/versions/node", home);
-            if let Ok(entries) = std::fs::read_dir(&nvm_versions_dir) {
-                let mut matched: Option<String> = None;
-                for entry in entries.flatten() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    let stripped = name.strip_prefix('v').unwrap_or(&name);
-                    if stripped.starts_with(version_prefix)
-                        || name == version_prefix
-                        || name == format!("v{}", version_prefix)
-                    {
-                        matched = Some(name);
-                    }
+        let mut extra_paths: Vec<String> = if cfg!(target_os = "windows") {
+            vec![
+                format!("{}\\.bun\\bin", home),
+                format!("{}\\.cargo\\bin", home),
+                format!("{}\\scoop\\shims", home),
+            ]
+        } else {
+            vec![
+                format!("{}/.bun/bin", home),
+                format!("{}/.cargo/bin", home),
+                "/usr/local/bin".into(),
+                "/opt/homebrew/bin".into(),
+            ]
+        };
+
+        if cfg!(target_os = "windows") {
+            // nvm-windows uses NVM_HOME and NVM_SYMLINK env vars
+            if let Ok(nvm_home) = std::env::var("NVM_HOME") {
+                extra_paths.push(nvm_home);
+            }
+            if let Ok(nvm_symlink) = std::env::var("NVM_SYMLINK") {
+                extra_paths.push(nvm_symlink);
+            } else {
+                // Fallback: standard Node.js install location
+                let program_files = std::env::var("ProgramFiles")
+                    .unwrap_or_else(|_| "C:\\Program Files".into());
+                let nodejs_dir = format!("{}\\nodejs", program_files);
+                if std::path::Path::new(&nodejs_dir).exists() {
+                    extra_paths.push(nodejs_dir);
                 }
-                if let Some(ver) = matched {
-                    extra_paths.push(format!("{}/{}/bin", nvm_versions_dir, ver));
+            }
+        } else {
+            // Resolve nvm's actual node bin path (nvm does not create ~/.nvm/current)
+            let nvm_alias_path = format!("{}/.nvm/alias/default", home);
+            if let Ok(alias) = std::fs::read_to_string(&nvm_alias_path) {
+                let version_prefix = alias.trim();
+                let nvm_versions_dir = format!("{}/.nvm/versions/node", home);
+                if let Ok(entries) = std::fs::read_dir(&nvm_versions_dir) {
+                    let mut matched: Option<String> = None;
+                    for entry in entries.flatten() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        let stripped = name.strip_prefix('v').unwrap_or(&name);
+                        if stripped.starts_with(version_prefix)
+                            || name == version_prefix
+                            || name == format!("v{}", version_prefix)
+                        {
+                            matched = Some(name);
+                        }
+                    }
+                    if let Some(ver) = matched {
+                        extra_paths.push(format!("{}/{}/bin", nvm_versions_dir, ver));
+                    }
                 }
             }
         }
 
-        let mut path_parts: Vec<&str> = current_path.split(':').collect();
+        let path_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+        let mut path_parts: Vec<&str> = current_path.split(path_sep).collect();
         for p in &extra_paths {
             if !path_parts.contains(&p.as_str()) {
                 path_parts.push(p.as_str());
             }
         }
-        env_vars.push(("PATH".into(), path_parts.join(":")));
+        env_vars.push(("PATH".into(), path_parts.join(path_sep)));
     }
 
     // Set resource directory (read-only templates for agents/skills/prompts)
@@ -95,8 +128,14 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
             log::warn!("Failed to get resource_dir: {}, falling back to exe dir", e);
             // Fallback: Resources directory relative to the executable
             if let Ok(exe) = std::env::current_exe() {
-                if let Some(macos_dir) = exe.parent() {
-                    let resources = macos_dir.parent().unwrap_or(macos_dir).join("Resources");
+                if let Some(exe_dir) = exe.parent() {
+                    // Windows: resources are in the same directory as the exe
+                    // macOS: exe -> MacOS/ -> Contents/ -> Resources/
+                    let resources = if cfg!(target_os = "windows") {
+                        exe_dir.to_path_buf()
+                    } else {
+                        exe_dir.parent().unwrap_or(exe_dir).join("Resources")
+                    };
                     if resources.exists() {
                         env_vars.push(("RESOURCES_DIR".into(), resources.to_string_lossy().to_string()));
                     }

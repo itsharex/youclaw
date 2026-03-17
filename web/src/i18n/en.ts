@@ -456,6 +456,8 @@ export const en = {
     searchLogs: 'Search logs...',
     noLogs: 'No logs for this date',
     loadMore: 'Load more',
+    loadOlder: 'Loading older logs...',
+    live: 'Live',
     totalEntries: 'entries',
     duration: 'Duration',
   },

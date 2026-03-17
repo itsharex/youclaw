@@ -100,7 +100,8 @@ function copyBunRuntime() {
   mkdirSync(bunRuntimeDir, { recursive: true })
 
   // Get current bun executable path
-  const bunPath = execSync('which bun', { encoding: 'utf-8' }).trim()
+  const whichCmd = process.platform === 'win32' ? 'where bun' : 'which bun'
+  const bunPath = execSync(whichCmd, { encoding: 'utf-8' }).trim().split('\n')[0]
 
   // Platform-specific naming
   const ext = process.platform === 'win32' ? '.exe' : ''

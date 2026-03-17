@@ -4,6 +4,7 @@ import { z } from 'zod/v4'
 import { bodyLimit } from 'hono/body-limit'
 import { getMessages, getChats, deleteChat, updateChatFields } from '../db/index.ts'
 import type { AgentManager, AgentQueue } from '../agent/index.ts'
+import { abortRegistry } from '../agent/abort-registry.ts'
 import type { MessageRouter } from '../channel/index.ts'
 import type { InboundMessage } from '../channel/index.ts'
 import { ALLOWED_MEDIA_TYPES, MAX_FILE_SIZE, MAX_FILES } from '../types/attachment.ts'
@@ -85,6 +86,13 @@ export function createMessagesRoutes(agentManager: AgentManager, agentQueue: Age
     const body = await c.req.json<{ name?: string; avatar?: string }>()
     updateChatFields(chatId, body)
     return c.json({ ok: true })
+  })
+
+  // POST /api/chats/:chatId/abort — abort a running query
+  messages.post('/chats/:chatId/abort', (c) => {
+    const chatId = c.req.param('chatId')
+    const aborted = abortRegistry.abort(chatId)
+    return c.json({ ok: true, aborted })
   })
 
   // DELETE /api/chats/:chatId — delete a conversation and its messages

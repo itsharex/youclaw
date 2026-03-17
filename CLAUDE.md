@@ -1,6 +1,6 @@
 # YouClaw
 
-Desktop AI assistant app, inspired by nanoClaw/OpenClaw.
+Desktop AI assistant app, inspired by CLaude code.
 
 ## Commands
 
