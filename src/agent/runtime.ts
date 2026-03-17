@@ -226,11 +226,52 @@ export function ensureBunRuntime(): string | null {
 // Module-level cache set by ensureBunRuntime() or lazy init
 let _bunRuntimePath: string | null | undefined = undefined
 
+/**
+ * Find Node.js executable on Windows.
+ * cli.js is a Node.js program — Bun's Node.js compat on Windows is insufficient.
+ */
+function findNodeExecutable(): string | null {
+  if (process.platform !== 'win32') return null
+
+  try {
+    const whereOutput = execSync('where node', { timeout: 5000, encoding: 'utf-8' }).trim()
+    const nodePath = whereOutput.split('\n')[0]?.trim() ?? ''
+    if (nodePath && existsSync(nodePath)) {
+      return nodePath
+    }
+  } catch {
+    // node not in PATH
+  }
+
+  // Check common install locations
+  const candidates = [
+    process.env.ProgramFiles && `${process.env.ProgramFiles}\\nodejs\\node.exe`,
+    process.env.LOCALAPPDATA && `${process.env.LOCALAPPDATA}\\fnm_multishells\\node.exe`,
+  ].filter(Boolean) as string[]
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate
+  }
+
+  return null
+}
+
 function resolveRuntimeExecutable(): string {
   const isBundled = process.execPath.includes('.app/') || process.execPath.includes('youclaw-server')
   if (!isBundled) return process.execPath
 
-  // Use cached embedded bun path
+  // Windows: prefer node.exe because cli.js is a Node.js app
+  // Bun's Node.js compat on Windows is insufficient for Claude Code CLI
+  if (process.platform === 'win32') {
+    const nodePath = findNodeExecutable()
+    if (nodePath) {
+      safeLog('info', 'Using Node.js for SDK subprocess on Windows', { nodePath })
+      return nodePath
+    }
+    safeLog('warn', 'Node.js not found on Windows, falling back to embedded Bun')
+  }
+
+  // Use cached embedded bun path (macOS/Linux, or Windows fallback)
   if (_bunRuntimePath === undefined) {
     _bunRuntimePath = ensureBunRuntime()
   }
@@ -592,12 +633,20 @@ export class AgentRuntime {
       category: 'agent',
     }, 'SDK query started')
 
+    // Ensure HOME is set on Windows (cli.js needs it)
+    if (process.platform === 'win32' && !process.env.HOME && process.env.USERPROFILE) {
+      process.env.HOME = process.env.USERPROFILE
+    }
+
     const cliPath = resolveCliPath()
     ensureStartupChecks(cliPath)
     // Determine JS runtime executable for SDK subprocess
     // Uses resolveRuntimeExecutable() which returns embedded bun if available,
     // falling back to system bun or process.execPath in dev mode.
     const executable = resolveRuntimeExecutable()
+
+    // Capture SDK subprocess stderr for diagnostics
+    let stderrOutput = ''
 
     const queryOptions: Record<string, unknown> = {
       model,
@@ -610,6 +659,10 @@ export class AgentRuntime {
       executable,
       settingSources: ['project'],
       ...(existingSessionId ? { resume: existingSessionId } : {}),
+      stderr: (data: string) => {
+        stderrOutput += data
+        logger.debug({ agentId, chatId, stderr: data.slice(0, 500), category: 'agent' }, 'SDK subprocess stderr')
+      },
     }
     logger.info({ cliPath, executable, category: 'agent' }, 'SDK executable config')
 
@@ -815,6 +868,7 @@ export class AgentRuntime {
         dataDir: process.env.DATA_DIR || '(not set)',
         platform: process.platform,
         fullTextPreview: fullText.trim().slice(0, 300) || '(empty)',
+        stderrPreview: stderrOutput.trim().slice(0, 500) || '(empty)',
         category: 'agent',
       }, 'SDK query failed — full diagnostic')
 
@@ -835,9 +889,10 @@ export class AgentRuntime {
         }, 'SDK subprocess failed immediately — possible quarantine or missing binary')
       }
 
-      // Append fullText to the error message so humanizeError can match specific error types
-      if (fullText.trim()) {
-        throw new Error(`${errMsg} | upstream_response: ${fullText.trim().slice(0, 500)}`)
+      // Append fullText or stderr to the error message so humanizeError can match specific error types
+      if (fullText.trim() || stderrOutput.trim()) {
+        const detail = fullText.trim() || stderrOutput.trim()
+        throw new Error(`${errMsg} | upstream_response: ${detail.slice(0, 500)}`)
       }
       throw err
     } finally {
@@ -1006,6 +1061,13 @@ export class AgentRuntime {
     // Server error (5xx from proxy/API)
     if (/\b50[0-9]\b|server error|bad gateway|service unavailable/i.test(raw)) {
       return { message: 'The model API returned a server error. This is usually temporary — please retry.', errorCode: ErrorCode.MODEL_CONNECTION_FAILED }
+    }
+    // Windows SDK subprocess crash — hint about Node.js
+    if (process.platform === 'win32' && /process exited with code/i.test(raw) && !/upstream_response/i.test(raw)) {
+      return {
+        message: 'Agent process failed to start on Windows. Please ensure Node.js is installed (https://nodejs.org). If already installed, please check the logs for details.',
+        errorCode: ErrorCode.MODEL_CONNECTION_FAILED,
+      }
     }
     // SDK process crash (fallback — last to avoid masking specific errors in upstream_response)
     if (/process exited with code/i.test(raw)) {
