@@ -200,6 +200,8 @@ const MAX_ZIP_ENTRY_BYTES = 512 * 1024
 const MAX_MARKETPLACE_LIMIT = 50
 const DEFAULT_MARKETPLACE_LIMIT = 24
 const FALLBACK_CURSOR_PREFIX = 'fallback:'
+const SEARCH_CURSOR_PREFIX = 'search:'
+const SEARCH_CACHE_TTL = 60_000
 
 interface ZipEntry {
   archivePath: string
@@ -209,6 +211,7 @@ interface ZipEntry {
 
 export class RegistryManager {
   private recommended: RecommendedEntry[] = []
+  private searchCache: { query: string; allItems: MarketplaceSkill[]; fetchedAt: number } | null = null
 
   constructor(
     private skillsLoader: SkillsLoader,
@@ -273,7 +276,11 @@ export class RegistryManager {
       if (normalized.query) {
         return await this.searchMarketplaceRemote(normalized, installed)
       }
-      return await this.listMarketplaceRemote(normalized, installed)
+      const result = await this.listMarketplaceRemote(normalized, installed)
+      if (result.items.length === 0 && !result.nextCursor) {
+        return this.listMarketplaceFallback(normalized, installed)
+      }
+      return result
     } catch (error) {
       const logger = getLogger()
       const message = error instanceof Error ? error.message : String(error)
@@ -399,30 +406,57 @@ export class RegistryManager {
     query: NormalizedMarketplaceQuery,
     installed: Map<string, InstalledSkillState>,
   ): Promise<MarketplacePage> {
-    const url = new URL(this.resolveSearchUrl())
-    url.searchParams.set('q', query.query)
-    url.searchParams.set('limit', String(query.limit))
-    if (query.highlightedOnly) {
-      url.searchParams.set('highlightedOnly', 'true')
-    }
-    if (query.nonSuspiciousOnly) {
-      url.searchParams.set('nonSuspiciousOnly', 'true')
+    const offset = this.parseSearchCursor(query.cursor)
+
+    // Fetch fresh results if no cache, query changed, or cache expired
+    if (
+      !this.searchCache ||
+      this.searchCache.query !== query.query ||
+      Date.now() - this.searchCache.fetchedAt > SEARCH_CACHE_TTL
+    ) {
+      const url = new URL(this.resolveSearchUrl())
+      url.searchParams.set('q', query.query)
+      url.searchParams.set('limit', String(MAX_MARKETPLACE_LIMIT))
+      if (query.highlightedOnly) {
+        url.searchParams.set('highlightedOnly', 'true')
+      }
+      if (query.nonSuspiciousOnly) {
+        url.searchParams.set('nonSuspiciousOnly', 'true')
+      }
+
+      const payload = await this.fetchJson<ClawHubSearchResponse>(url.toString())
+      const allItems = (payload.results ?? [])
+        .filter((item): item is Required<Pick<ClawHubSearchResult, 'slug' | 'displayName'>> & ClawHubSearchResult => {
+          return typeof item.slug === 'string' && item.slug.length > 0 && typeof item.displayName === 'string'
+        })
+        .map((item) => this.buildRemoteSearchSkill(item, installed.get(item.slug)))
+
+      this.searchCache = {
+        query: query.query,
+        allItems,
+        fetchedAt: Date.now(),
+      }
     }
 
-    const payload = await this.fetchJson<ClawHubSearchResponse>(url.toString())
-    const items = (payload.results ?? [])
-      .filter((item): item is Required<Pick<ClawHubSearchResult, 'slug' | 'displayName'>> & ClawHubSearchResult => {
-        return typeof item.slug === 'string' && item.slug.length > 0 && typeof item.displayName === 'string'
-      })
-      .map((item) => this.buildRemoteSearchSkill(item, installed.get(item.slug)))
+    const sliced = this.searchCache.allItems.slice(offset, offset + query.limit)
+    const nextOffset = offset + query.limit
+    const nextCursor = nextOffset < this.searchCache.allItems.length ? `${SEARCH_CURSOR_PREFIX}${nextOffset}` : null
 
     return {
-      items,
-      nextCursor: null,
+      items: sliced,
+      nextCursor,
       source: 'clawhub',
       query: query.query,
       sort: query.sort,
     }
+  }
+
+  private parseSearchCursor(cursor: string | null): number {
+    if (!cursor || !cursor.startsWith(SEARCH_CURSOR_PREFIX)) {
+      return 0
+    }
+    const value = Number.parseInt(cursor.slice(SEARCH_CURSOR_PREFIX.length), 10)
+    return Number.isFinite(value) && value >= 0 ? value : 0
   }
 
   private listMarketplaceFallback(
@@ -854,16 +888,6 @@ export class RegistryManager {
   private collectInstalledSkillStates(): Map<string, InstalledSkillState> {
     const installed = new Map<string, InstalledSkillState>()
 
-    for (const skill of this.skillsLoader.loadAllSkills()) {
-      if (skill.registryMeta?.source === CLAWHUB_SOURCE && skill.registryMeta.slug) {
-        installed.set(skill.registryMeta.slug, {
-          slug: skill.registryMeta.slug,
-          installSource: skill.registryMeta.source,
-          version: skill.registryMeta.version,
-        })
-      }
-    }
-
     const userSkillsDir = this.resolveUserSkillsDir()
     if (!existsSync(userSkillsDir)) {
       return installed
@@ -1026,15 +1050,7 @@ export class RegistryManager {
 
   /** Get locally installed skill slug set */
   private getInstalledSlugs(): Set<string> {
-    const allSkills = this.skillsLoader.loadAllSkills()
     const installedSlugs = new Set<string>()
-
-    // Collect installed slugs via registryMeta
-    for (const skill of allSkills) {
-      if (skill.registryMeta?.slug) {
-        installedSlugs.add(skill.registryMeta.slug)
-      }
-    }
 
     // Check user skills directory for slug directories
     const userSkillsDir = this.resolveUserSkillsDir()

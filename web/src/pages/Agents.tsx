@@ -1,22 +1,31 @@
-import { useState, useEffect, useCallback } from 'react'
-import { getAgents, getAgentDocs, updateAgentDoc, createAgent, deleteAgent, getAgentConfig, updateAgentConfig, getBrowserProfiles, getSkills } from '../api/client'
-import type { BrowserProfileDTO, Skill } from '../api/client'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { getAgents, getAgentDocs, updateAgentDoc, createAgent, deleteAgent, getAgentConfig, updateAgentConfig, getBrowserProfiles, getSkills, getMarketplaceSkills, getRecommendedSkills, installRecommendedSkill } from '../api/client'
+import type { BrowserProfileDTO, Skill, MarketplaceSkill } from '../api/client'
 import { useNavigate } from 'react-router-dom'
 import {
   Bot, FolderOpen, MessageSquare, Plus, Trash2,
   FileText, Save, Pencil, X, ChevronRight,
   Activity, Clock, AlertCircle, Layers, Globe, Puzzle,
+  Store, Loader2,
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '../i18n'
 import { useChatContext } from '../hooks/chatCtx'
 import { SidePanel } from '@/components/layout/SidePanel'
+import { MarketplaceCard } from '@/components/MarketplaceCard'
 import { useDragRegion } from "@/hooks/useDragRegion"
+
+enum MarketplaceAction {
+  Install = 'install',
+  Bind = 'bind',
+  Bound = 'bound',
+}
 
 type AgentState = {
   sessionId: string | null
@@ -784,6 +793,16 @@ function AgentSkillsSection({
   const { t } = useI18n()
   const [search, setSearch] = useState('')
 
+  // Marketplace dialog state
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false)
+  const [marketplaceQuery, setMarketplaceQuery] = useState('')
+  const [marketplaceResults, setMarketplaceResults] = useState<MarketplaceSkill[]>([])
+  const [marketplaceLoading, setMarketplaceLoading] = useState(false)
+  const [installingSlug, setInstallingSlug] = useState<string | null>(null)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [marketplaceError, setMarketplaceError] = useState<string | null>(null)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const filteredSkills = allSkills.filter(s =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
     s.frontmatter.description.toLowerCase().includes(search.toLowerCase())
@@ -804,29 +823,121 @@ function AgentSkillsSection({
     onUpdate()
   }
 
-  const handleToggleAll = async () => {
-    const isWildcard = agentSkills?.includes('*')
-    if (allSelected) {
-      // Deselect all visible
-      const visible = new Set(filteredSkills.map(s => s.name))
-      const expanded = isWildcard ? allSkills.map(s => s.name) : (agentSkills ?? [])
-      const next = expanded.filter(s => !visible.has(s))
-      await updateAgentConfig(agentId, { skills: next })
+  const handleToggleAll = async (checked: boolean | 'indeterminate') => {
+    if (checked === true) {
+      await updateAgentConfig(agentId, { skills: ['*'] })
     } else {
-      // Select all visible
-      const expanded = isWildcard ? allSkills.map(s => s.name) : (agentSkills ?? [])
-      const current = new Set(expanded)
-      const next = [...current]
-      for (const s of filteredSkills) {
-        if (!current.has(s.name)) next.push(s.name)
-      }
-      await updateAgentConfig(agentId, { skills: next })
+      await updateAgentConfig(agentId, { skills: [] })
     }
     onUpdate()
   }
 
   const [expanded, setExpanded] = useState(false)
   const selectedCount = selectedSet.size
+
+  // Load recommended skills initially, search marketplace on query change
+  useEffect(() => {
+    if (!marketplaceOpen) return
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+
+    if (!marketplaceQuery.trim()) {
+      setMarketplaceLoading(true)
+      setMarketplaceError(null)
+      getRecommendedSkills()
+        .then((skills) => {
+          setMarketplaceResults(skills)
+          setNextCursor(null)
+        })
+        .catch(() => {
+          setMarketplaceResults([])
+          setMarketplaceError(t.agents.marketplaceError)
+        })
+        .finally(() => setMarketplaceLoading(false))
+      return
+    }
+
+    searchTimerRef.current = setTimeout(() => {
+      setMarketplaceLoading(true)
+      setMarketplaceError(null)
+      getMarketplaceSkills({ query: marketplaceQuery })
+        .then((page) => {
+          setMarketplaceResults(page.items)
+          setNextCursor(page.nextCursor)
+        })
+        .catch(() => {
+          setMarketplaceResults([])
+          setMarketplaceError(t.agents.marketplaceError)
+        })
+        .finally(() => setMarketplaceLoading(false))
+    }, 300)
+
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
+  }, [marketplaceOpen, marketplaceQuery, t.agents.marketplaceError])
+
+  const handleLoadMore = () => {
+    if (!nextCursor) return
+    setMarketplaceLoading(true)
+    getMarketplaceSkills({ query: marketplaceQuery, cursor: nextCursor })
+      .then((page) => {
+        setMarketplaceResults((prev) => [...prev, ...page.items])
+        setNextCursor(page.nextCursor)
+      })
+      .catch(() => {
+        setMarketplaceError(t.agents.marketplaceError)
+      })
+      .finally(() => setMarketplaceLoading(false))
+  }
+
+  const handleOpenMarketplace = () => {
+    setMarketplaceQuery('')
+    setMarketplaceOpen(true)
+  }
+
+  const handleCloseMarketplace = () => {
+    setMarketplaceOpen(false)
+    setMarketplaceQuery('')
+    setMarketplaceResults([])
+    setNextCursor(null)
+    setMarketplaceError(null)
+  }
+
+  const handleInstallAndBind = async (slug: string) => {
+    setInstallingSlug(slug)
+    try {
+      const beforeNames = new Set(allSkills.map(s => s.name))
+      await installRecommendedSkill(slug)
+      // Refresh skills list
+      const freshSkills = await getSkills()
+      // Find the newly installed skill by diffing
+      const newSkill = freshSkills.find(s => !beforeNames.has(s.name))
+      if (newSkill && !isWildcard) {
+        const current = agentSkills ?? []
+        if (!current.includes(newSkill.name)) {
+          await updateAgentConfig(agentId, { skills: [...current, newSkill.name] })
+        }
+      }
+      onUpdate()
+      handleCloseMarketplace()
+    } catch {
+      // Error is silently handled; the user can retry
+    } finally {
+      setInstallingSlug(null)
+    }
+  }
+
+  const handleBindSkill = async (skillName: string) => {
+    await handleToggleSkill(skillName, true)
+    handleCloseMarketplace()
+  }
+
+  // Determine action button state for a marketplace skill
+  const getMarketplaceAction = (skill: MarketplaceSkill): MarketplaceAction => {
+    if (skill.installed) {
+      if (isWildcard) return MarketplaceAction.Bound
+      return selectedSet.has(skill.slug) ? MarketplaceAction.Bound : MarketplaceAction.Bind
+    }
+    return MarketplaceAction.Install
+  }
 
   return (
     <div className="space-y-3">
@@ -837,6 +948,13 @@ function AgentSkillsSection({
         <ChevronRight className={cn('h-3.5 w-3.5 transition-transform shrink-0', expanded && 'rotate-90')} />
         <Puzzle className="h-4 w-4 text-muted-foreground" />
         <h3 className="text-sm font-medium">{t.agents.skills}</h3>
+        <button
+          onClick={(e) => { e.stopPropagation(); handleOpenMarketplace() }}
+          className="flex items-center gap-1 text-xs text-primary hover:underline ml-2"
+        >
+          <Store className="h-3 w-3" />
+          {t.agents.browseClawHub}
+        </button>
         <span className="text-xs text-muted-foreground ml-auto">{selectedCount}/{allSkills.length}</span>
       </button>
 
@@ -849,16 +967,19 @@ function AgentSkillsSection({
               onChange={(e) => setSearch(e.target.value)}
               className="h-8 text-xs flex-1"
             />
-            <label className="flex items-center gap-2 cursor-pointer shrink-0">
+            <div
+              className="flex items-center gap-2 shrink-0 cursor-pointer"
+              role="button"
+              onClick={() => handleToggleAll(!(isWildcard || allSelected))}
+            >
               <Checkbox
-                checked={allSelected}
-                {...(someSelected && !allSelected ? { 'data-state': 'indeterminate' } : {})}
-                onCheckedChange={handleToggleAll}
+                checked={isWildcard || allSelected}
+                {...(!isWildcard && someSelected && !allSelected ? { 'data-state': 'indeterminate' } : {})}
+                tabIndex={-1}
+                className="pointer-events-none"
               />
-              <span className="text-xs text-muted-foreground">
-                {allSelected ? t.agents.skillsDeselectAll : t.agents.skillsSelectAll}
-              </span>
-            </label>
+              <span className="text-xs text-muted-foreground">{t.agents.skillsSelectAll}</span>
+            </div>
           </div>
 
           {filteredSkills.length === 0 ? (
@@ -866,13 +987,17 @@ function AgentSkillsSection({
           ) : (
             <div className="space-y-1 max-h-60 overflow-y-auto">
               {filteredSkills.map(skill => (
-                <label
+                <div
                   key={skill.name}
+                  role="button"
                   className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent/50 cursor-pointer"
+                  onClick={() => { if (!isWildcard) handleToggleSkill(skill.name, !selectedSet.has(skill.name)) }}
                 >
                   <Checkbox
                     checked={selectedSet.has(skill.name)}
-                    onCheckedChange={(checked) => handleToggleSkill(skill.name, !!checked)}
+                    disabled={isWildcard}
+                    tabIndex={-1}
+                    className="pointer-events-none"
                   />
                   <div className="flex-1 min-w-0">
                     <span className="text-sm">{skill.name}</span>
@@ -880,12 +1005,89 @@ function AgentSkillsSection({
                       <span className="text-xs text-muted-foreground ml-2">{skill.frontmatter.description}</span>
                     )}
                   </div>
-                </label>
+                </div>
               ))}
             </div>
           )}
         </div>
       )}
+
+      {/* Marketplace Dialog */}
+      <Dialog open={marketplaceOpen} onOpenChange={(open) => { if (!open) handleCloseMarketplace() }}>
+        <DialogContent className="sm:max-w-3xl max-h-[70vh] overflow-hidden flex flex-col p-8">
+          <div className="flex items-center gap-2 mb-2">
+            <Store className="h-5 w-5 text-primary" />
+            <h2 className="text-base font-semibold">{t.agents.browseClawHub}</h2>
+          </div>
+
+          <Input
+            placeholder={t.agents.searchMarketplace}
+            value={marketplaceQuery}
+            onChange={(e) => setMarketplaceQuery(e.target.value)}
+            className="h-9 text-sm"
+            autoFocus
+          />
+
+          <div className="mt-4 space-y-1 flex-1 overflow-y-auto pr-1">
+            {/* Error */}
+            {marketplaceError && !marketplaceLoading && (
+              <p className="text-xs text-red-400 py-2">{marketplaceError}</p>
+            )}
+
+            {/* Loading */}
+            {marketplaceLoading && marketplaceResults.length === 0 && (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+
+            {/* Results */}
+            {marketplaceResults.map((skill) => {
+              const action = getMarketplaceAction(skill)
+              return (
+                <MarketplaceCard
+                  key={skill.slug}
+                  skill={skill}
+                  onChanged={onUpdate}
+                  extraActions={
+                    installingSlug === skill.slug ? (
+                      <Button size="sm" variant="secondary" className="h-7 text-xs" disabled>
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        {t.agents.installingSkill}
+                      </Button>
+                    ) : action === MarketplaceAction.Bound ? (
+                      <span className="text-xs text-muted-foreground">{t.agents.skillBound} &#10003;</span>
+                    ) : action === MarketplaceAction.Bind ? (
+                      <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => handleBindSkill(skill.slug)}>
+                        {t.agents.bindSkill}
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => handleInstallAndBind(skill.slug)}>
+                        {t.agents.installAndBind}
+                      </Button>
+                    )
+                  }
+                />
+              )
+            })}
+
+            {/* Empty */}
+            {!marketplaceLoading && !marketplaceError && marketplaceResults.length === 0 && (
+              <p className="text-xs text-muted-foreground py-6 text-center">{t.agents.noSkillsAvailable}</p>
+            )}
+          </div>
+
+          {/* Load more */}
+          {nextCursor && (
+            <div className="flex justify-center pt-3">
+              <Button variant="ghost" size="sm" className="text-xs" onClick={handleLoadMore} disabled={marketplaceLoading}>
+                {marketplaceLoading && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
+                {t.agents.loadMore}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -7,12 +7,8 @@ import {
   toggleSkill,
   deleteSkill,
   getMarketplaceSkills,
-  getRecommendedSkills,
-  installRecommendedSkill,
-  uninstallRecommendedSkill,
-  updateMarketplaceSkill,
 } from '../api/client'
-import type { Skill, MarketplacePage, MarketplaceSkill, MarketplaceSort, RecommendedSkill } from '../api/client'
+import type { Skill, MarketplacePage, MarketplaceSort } from '../api/client'
 import {
   Puzzle,
   CheckCircle,
@@ -32,13 +28,13 @@ import {
   Trash2,
   Search,
   Sparkles,
-  RefreshCw,
 } from 'lucide-react'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { cn } from '../lib/utils'
 import { useI18n } from '../i18n'
+import { MarketplaceCard } from '@/components/MarketplaceCard'
 import { SidePanel } from '@/components/layout/SidePanel'
 import { useDragRegion } from "@/hooks/useDragRegion"
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
@@ -92,8 +88,6 @@ export function Skills() {
 
   // Unified search state
   const [searchQuery, setSearchQuery] = useState('')
-  const [recommended, setRecommended] = useState<RecommendedSkill[]>([])
-  const [recommendedLoading, setRecommendedLoading] = useState(false)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const sourceLabels: Record<Skill['source'], string> = {
@@ -138,23 +132,10 @@ export function Skills() {
     [marketplace.nextCursor, searchQuery, marketplaceSort, t.skills.marketplaceLoadFailed],
   )
 
-  // Load recommended list (no search query)
-  const loadRecommended = useCallback(() => {
-    setRecommendedLoading(true)
-    getRecommendedSkills()
-      .then(setRecommended)
-      .catch(() => setRecommended([]))
-      .finally(() => setRecommendedLoading(false))
-  }, [])
-
   useEffect(() => { loadSkills() }, [loadSkills])
   useEffect(() => {
     if (tab === 'marketplace') {
-      if (searchQuery.trim()) {
-        loadMarketplace({ query: searchQuery })
-      } else {
-        loadRecommended()
-      }
+      loadMarketplace({ query: searchQuery })
     }
   }, [tab, searchQuery, marketplaceSort]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -180,8 +161,8 @@ export function Skills() {
     .filter(g => g.skills.length > 0)
 
   const isSearching = searchQuery.trim().length > 0
-  const hasMarketplaceItems = isSearching ? marketplace.items.length > 0 : recommended.length > 0
-  const canLoadMore = isSearching && Boolean(marketplace.nextCursor)
+  const hasMarketplaceItems = marketplace.items.length > 0
+  const canLoadMore = Boolean(marketplace.nextCursor)
 
   return (
     <div className="flex h-full flex-col">
@@ -463,7 +444,7 @@ export function Skills() {
                   className="pl-9"
                 />
               </div>
-              {isSearching && (
+              {(
                 <>
                   <select
                     data-testid="marketplace-sort-select"
@@ -490,12 +471,12 @@ export function Skills() {
             {!isSearching && (
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
-                <h3 className="text-sm font-medium">{t.skills.recommended}</h3>
+                <h3 className="text-sm font-medium">{t.skills.marketplaceBrowseSummary}</h3>
               </div>
             )}
 
             {/* Loading state */}
-            {(recommendedLoading || marketplaceStatus === 'loading') && (
+            {marketplaceStatus === 'loading' && (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
@@ -510,27 +491,15 @@ export function Skills() {
             )}
 
             {/* Empty state */}
-            {!recommendedLoading && marketplaceStatus !== 'loading' && marketplaceStatus !== 'error' && !hasMarketplaceItems && (
+            {marketplaceStatus !== 'loading' && marketplaceStatus !== 'error' && !hasMarketplaceItems && (
               <div className="text-center text-muted-foreground text-sm py-12">
                 <Store className="h-12 w-12 mx-auto mb-4 opacity-20" />
                 <p>{isSearching ? t.skills.noMarketplaceSkills : t.skills.noSkills}</p>
               </div>
             )}
 
-            {/* Results: recommended list or search results */}
-            {!isSearching && !recommendedLoading && recommended.length > 0 && (
-              <div className="grid gap-3">
-                {recommended.map(skill => (
-                  <MarketplaceCard
-                    key={skill.slug}
-                    skill={skill}
-                    onChanged={loadSkills}
-                  />
-                ))}
-              </div>
-            )}
-
-            {isSearching && marketplaceStatus !== 'loading' && marketplace.items.length > 0 && (
+            {/* Results */}
+            {marketplaceStatus !== 'loading' && marketplace.items.length > 0 && (
               <div className="grid gap-3">
                 {marketplace.items.map(skill => (
                   <MarketplaceCard
@@ -601,205 +570,6 @@ export function Skills() {
       </AlertDialog>
     </div>
   )
-}
-
-/** Marketplace card */
-function MarketplaceCard({ skill: initialSkill, onChanged }: { skill: MarketplaceSkill; onChanged: () => void }) {
-  const { t } = useI18n()
-  const [skill, setSkill] = useState(initialSkill)
-  const [status, setStatus] = useState<'idle' | 'installing' | 'updating' | 'uninstalling' | 'error'>('idle')
-  const [errorMsg, setErrorMsg] = useState('')
-
-  const handleInstall = async () => {
-    setStatus('installing')
-    setErrorMsg('')
-    try {
-      const result = await installRecommendedSkill(skill.slug)
-      if (result.ok) {
-        setStatus('idle')
-        setSkill(s => ({ ...s, installed: true, hasUpdate: false }))
-        onChanged()
-      } else {
-        setStatus('error')
-        setErrorMsg(result.error || t.skills.installFailed)
-      }
-    } catch (error) {
-      setStatus('error')
-      setErrorMsg(error instanceof Error ? error.message : t.skills.installFailed)
-    }
-  }
-
-  const handleUpdate = async () => {
-    setStatus('updating')
-    setErrorMsg('')
-    try {
-      const result = await updateMarketplaceSkill(skill.slug)
-      if (result.ok) {
-        setStatus('idle')
-        setSkill(s => ({ ...s, hasUpdate: false, installedVersion: s.latestVersion ?? s.installedVersion }))
-        onChanged()
-      } else {
-        setStatus('error')
-        setErrorMsg(result.error || t.skills.updateFailed)
-      }
-    } catch (error) {
-      setStatus('error')
-      setErrorMsg(error instanceof Error ? error.message : t.skills.updateFailed)
-    }
-  }
-
-  const handleUninstall = async () => {
-    setStatus('uninstalling')
-    setErrorMsg('')
-    try {
-      const result = await uninstallRecommendedSkill(skill.slug)
-      if (result.ok) {
-        setStatus('idle')
-        setSkill(s => ({ ...s, installed: false, hasUpdate: false, installedVersion: undefined }))
-        onChanged()
-      } else {
-        setStatus('error')
-        setErrorMsg(result.error || t.skills.installFailed)
-      }
-    } catch (error) {
-      setStatus('error')
-      setErrorMsg(error instanceof Error ? error.message : t.skills.installFailed)
-    }
-  }
-
-  return (
-    <div
-      data-testid={`marketplace-card-${skill.slug}`}
-      className="rounded-xl border border-border p-4 transition-colors hover:bg-accent/20"
-    >
-      <div className="flex gap-4">
-        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-          <Puzzle className="h-5 w-5 text-primary" />
-        </div>
-        <div className="flex-1 min-w-0 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="font-medium text-sm">{skill.displayName}</div>
-            {skill.installed && (
-              <Badge data-testid={`marketplace-installed-badge-${skill.slug}`} variant="secondary">
-                {t.skills.installed}
-              </Badge>
-            )}
-            {skill.hasUpdate && (
-              <Badge
-                data-testid={`marketplace-update-badge-${skill.slug}`}
-                variant="outline"
-                className="text-amber-500 border-amber-500/40"
-              >
-                {t.skills.marketplaceUpdateAvailable}
-              </Badge>
-            )}
-          </div>
-          <div className="text-xs text-muted-foreground">{skill.summary}</div>
-
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            {skill.latestVersion && (
-              <span data-testid={`marketplace-latest-version-${skill.slug}`}>
-                {t.skills.marketplaceVersionLabel}: {skill.latestVersion}
-              </span>
-            )}
-            {skill.installedVersion && (
-              <span data-testid={`marketplace-installed-version-${skill.slug}`}>
-                {t.skills.marketplaceInstalledVersionLabel}: {skill.installedVersion}
-              </span>
-            )}
-            {typeof skill.downloads === 'number' && (
-              <span>{t.skills.marketplaceDownloadsLabel}: {skill.downloads}</span>
-            )}
-            {typeof skill.stars === 'number' && (
-              <span>{t.skills.marketplaceStarsLabel}: {skill.stars}</span>
-            )}
-            {typeof skill.installsCurrent === 'number' && (
-              <span>{t.skills.marketplaceInstallsLabel}: {skill.installsCurrent}</span>
-            )}
-            {skill.updatedAt && (
-              <span>{t.skills.marketplaceUpdatedLabel}: {formatMarketplaceDate(skill.updatedAt)}</span>
-            )}
-          </div>
-
-          {(skill.tags.length > 0 || skill.metadata?.os.length || skill.metadata?.systems.length) && (
-            <div className="flex flex-wrap gap-2">
-              {skill.tags.map((tag) => (
-                <Badge key={tag} variant="outline" className="text-xs">
-                  {tag}
-                </Badge>
-              ))}
-              {skill.metadata?.os.map((os) => (
-                <Badge key={`os-${os}`} variant="outline" className="text-xs">
-                  {os}
-                </Badge>
-              ))}
-              {skill.metadata?.systems.map((system) => (
-                <Badge key={`sys-${system}`} variant="outline" className="text-xs">
-                  {system}
-                </Badge>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="shrink-0 flex items-start gap-2">
-          {skill.installed && skill.hasUpdate && (
-            <Button
-              data-testid={`marketplace-update-${skill.slug}`}
-              size="sm"
-              variant="secondary"
-              className="text-xs"
-              onClick={handleUpdate}
-              disabled={status === 'updating'}
-            >
-              {status === 'updating' ? (
-                <><RefreshCw className="h-3 w-3 animate-spin mr-1" />{t.skills.updating}</>
-              ) : (
-                <><RefreshCw className="h-3 w-3 mr-1" />{t.skills.update}</>
-              )}
-            </Button>
-          )}
-          {skill.installed ? (
-            <Button
-              data-testid={`marketplace-uninstall-${skill.slug}`}
-              size="sm"
-              variant="ghost"
-              className="text-xs text-muted-foreground hover:text-red-400"
-              onClick={handleUninstall}
-              disabled={status === 'uninstalling'}
-            >
-              {status === 'uninstalling' ? (
-                <><Loader2 className="h-3 w-3 animate-spin mr-1" />{t.skills.uninstalling}</>
-              ) : (
-                <><Trash2 className="h-3 w-3 mr-1" />{t.skills.uninstall}</>
-              )}
-            </Button>
-          ) : (
-            <Button
-              data-testid={`marketplace-install-${skill.slug}`}
-              size="sm"
-              variant="default"
-              className="text-xs"
-              onClick={handleInstall}
-              disabled={status === 'installing'}
-            >
-              {status === 'installing' ? (
-                <><Loader2 className="h-3 w-3 animate-spin mr-1" />{t.skills.installing}</>
-              ) : (
-                <><Download className="h-3 w-3 mr-1" />{t.skills.installFromMarket}</>
-              )}
-            </Button>
-          )}
-        </div>
-      </div>
-      {status === 'error' && errorMsg && (
-        <div className="text-xs text-red-400 mt-3">{errorMsg}</div>
-      )}
-    </div>
-  )
-}
-
-function formatMarketplaceDate(timestamp: number) {
-  return new Date(timestamp).toLocaleDateString()
 }
 
 /** Environment variable row */
