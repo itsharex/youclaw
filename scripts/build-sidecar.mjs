@@ -9,7 +9,7 @@
  */
 
 import { execSync } from 'node:child_process'
-import { mkdirSync, readdirSync, unlinkSync, writeFileSync, copyFileSync, chmodSync } from 'node:fs'
+import { mkdirSync, readdirSync, unlinkSync, writeFileSync, copyFileSync, chmodSync, statSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
