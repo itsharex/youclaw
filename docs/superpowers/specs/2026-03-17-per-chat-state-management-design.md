@@ -25,7 +25,7 @@ The backend already supports concurrent chat processing (via `AgentQueue` with p
 
 ### Why This Approach
 
-- **Zustand Store** with `Map<chatId, ChatState>` provides per-entity state management, perfect for multiple independent chats
+- **Zustand Store** with `Record<chatId, ChatState>` provides per-entity state management, perfect for multiple independent chats
 - **SSEManager** as a standalone singleton (not a React hook) ensures SSE connections survive React re-renders and component unmounts
 - **Thin hook layer** preserves the existing `ChatContextType` interface, requiring zero changes to downstream components
 
@@ -45,6 +45,8 @@ interface ChatState {
   isProcessing: boolean
   pendingToolUse: ToolUseItem[]
   chatStatus: 'submitted' | 'streaming' | 'ready' | 'error'
+  showInsufficientCredits: boolean
+  sseErrorHandled: boolean  // prevents duplicate error messages from send() catch + SSE error
 }
 ```
 
@@ -52,8 +54,8 @@ interface ChatState {
 
 ```typescript
 interface ChatStore {
-  // State
-  chats: Map<string, ChatState>
+  // State (Record instead of Map for Zustand devtools compatibility)
+  chats: Record<string, ChatState>
   activeChatId: string | null
 
   // Per-chat mutations
@@ -66,6 +68,8 @@ interface ChatStore {
   setMessages(chatId: string, messages: Message[]): void
   handleError(chatId: string, error: string, errorCode?: string): void
   removeChat(chatId: string): void
+  setShowInsufficientCredits(chatId: string, show: boolean): void
+  markSseErrorHandled(chatId: string): void
 
   // Active chat
   setActiveChatId(chatId: string | null): void
@@ -73,9 +77,15 @@ interface ChatStore {
 ```
 
 Key behaviors:
-- `chats` is a `Map<string, ChatState>`, each chatId has independent state
+- `chats` is a `Record<string, ChatState>` (plain object, not Map, for Zustand devtools compatibility)
 - `activeChatId` is a pointer; switching only changes the pointer
-- `chatStatus` is derived within store actions (not via useEffect): `setProcessing` updates `chatStatus` synchronously
+- `chatStatus` state machine — derived within store actions, not via useEffect:
+  - `setProcessing(chatId, true)` → sets `chatStatus = 'submitted'`
+  - `appendStreamText(chatId, text)` → sets `chatStatus = 'streaming'` (if `isProcessing`)
+  - `completeMessage` / `setProcessing(chatId, false)` → sets `chatStatus = 'ready'`
+  - `handleError` → sets `chatStatus = 'error'`, then uses `setTimeout(2000)` to reset to `'ready'` (same as current behavior)
+- `sseErrorHandled` flag per chat: set to `true` by `handleError`, checked by `send()` catch block to avoid duplicate error messages, reset to `false` at start of each `send()`
+- `showInsufficientCredits` per chat: set by `handleError` when `errorCode === 'INSUFFICIENT_CREDITS'`
 - Store is a global singleton; sidebar can subscribe to any chat's `isProcessing` via selector
 
 ### SSEManager (`web/src/lib/sse-manager.ts`)
@@ -120,30 +130,34 @@ function useActiveChatState(): ChatState | null
 function useChatProcessing(chatId: string): boolean
 
 // Actions: send, loadChat, newChat, stop
-function useChatActions(): {
-  send(agentId: string, prompt: string, browserProfileId?: string, attachments?: Attachment[]): Promise<void>
+// Note: agentId is passed to the hook, not to send(), preserving the existing ChatContextType interface
+function useChatActions(agentId: string): {
+  send(prompt: string, browserProfileId?: string, attachments?: Attachment[]): Promise<void>
   loadChat(chatId: string): Promise<void>
   newChat(): void
   stop(): void
+  setShowInsufficientCredits(show: boolean): void
 }
 ```
 
 `send()` flow:
 1. Pre-generate chatId if new (`web:${uuid}`)
-2. `store.initChat(chatId)`
-3. `store.addUserMessage(chatId, msg)`
-4. `store.setProcessing(chatId, true)`
-5. `sseManager.connect(chatId)`
-6. Wait 100ms for EventSource (same race condition fix as current code)
-7. Call `sendMessage` API
+2. `store.initChat(chatId)` + `store.setActiveChatId(chatId)`
+3. Reset `sseErrorHandled` flag for this chat
+4. `store.addUserMessage(chatId, msg)`
+5. `store.setProcessing(chatId, true)`
+6. `sseManager.connect(chatId)`
+7. Wait 100ms for EventSource (same race condition fix as current code)
+8. Call `sendMessage` API
+9. On catch: check `sseErrorHandled` flag — if true, skip (SSE already handled). Otherwise add error message to store. If error matches insufficient credits pattern, set `showInsufficientCredits`.
 
 `loadChat()` flow:
 1. `store.setActiveChatId(chatId)`
-2. If chat already in store with messages, done (instant switch)
+2. If chat already in store with messages, done (instant switch — including chats that are mid-streaming in the background; their SSE connection is still active and dispatching to the store, so the UI will reactively show current streaming progress)
 3. Otherwise fetch from backend, `store.setMessages(chatId, msgs)`
 
 `newChat()` flow:
-1. `store.setActiveChatId(null)`
+1. `store.setActiveChatId(null)` — only changes the pointer; any previously active chat that is mid-streaming continues processing in the background via its SSE connection
 
 `stop()` flow:
 1. Get activeChatId
@@ -157,7 +171,7 @@ Simplified to read from store and pass through context:
 ```typescript
 function ChatProvider({ children }) {
   const activeChatState = useActiveChatState()
-  const actions = useChatActions()
+  const actions = useChatActions(agentId)  // agentId captured here, not exposed to send()
   // chatList, agents, browserProfiles, searchQuery etc. remain unchanged
 
   return (
@@ -168,6 +182,11 @@ function ChatProvider({ children }) {
       isProcessing: activeChatState?.isProcessing ?? false,
       pendingToolUse: activeChatState?.pendingToolUse ?? [],
       chatStatus: activeChatState?.chatStatus ?? 'ready',
+      showInsufficientCredits: activeChatState?.showInsufficientCredits ?? false,
+      setShowInsufficientCredits: (show) => {
+        const cid = activeChatState?.chatId
+        if (cid) store.setShowInsufficientCredits(cid, show)
+      },
       ...actions,
       chatList, agents, ...
     }}>
@@ -178,6 +197,21 @@ function ChatProvider({ children }) {
 ```
 
 `ChatContextType` interface remains unchanged. All downstream consumers (`ChatMessages`, `ChatInput`, `ChatWelcome`, etc.) require zero modification.
+
+**`deleteChat` integration**: The existing `deleteChat` logic stays in `ChatProvider` but adds SSE cleanup:
+```typescript
+const deleteChat = async (chatIdToDelete: string) => {
+  await deleteChatApi(chatIdToDelete)
+  sseManager.disconnect(chatIdToDelete)  // cleanup SSE if active
+  store.removeChat(chatIdToDelete)        // cleanup store entry
+  if (store.getState().activeChatId === chatIdToDelete) store.setActiveChatId(null)
+  refreshChats()
+}
+```
+
+**`refreshChats` trigger strategy**: Instead of subscribing to all chats' message counts (which would cause excessive refreshes), `refreshChats` is called:
+- On `activeChatId` change (user switches chat)
+- Inside `completeMessage` and `addUserMessage` store actions via a callback/subscription — the store exposes an `onChatUpdate` event that ChatProvider subscribes to with a debounced `refreshChats` call (debounce 500ms to batch rapid SSE completions)
 
 ### Sidebar Indicator (`web/src/components/chat/ChatListItem.tsx`)
 
@@ -210,12 +244,14 @@ Performance: each ChatListItem subscribes only to its own chatId's `isProcessing
 
 | Scenario | Handling |
 |----------|----------|
-| App closed while streaming | `SSEManager.disconnectAll()` on beforeunload/unmount. Backend continues. Next open: `loadChat` recovers final message from DB. |
+| App closed while streaming | `SSEManager.disconnectAll()` on `beforeunload` (registered in SSEManager module init, not React). Backend continues. Next open: `loadChat` recovers final message from DB. |
 | Multiple messages to same chat | Backend AgentQueue ensures per-chat FIFO. Frontend store appends user messages; SSE events arrive in order. |
 | Chat deleted while SSE active | `deleteChat` calls `sseManager.disconnect(chatId)` + `store.removeChat(chatId)`. |
 | New chat (no chatId yet) | `send()` pre-generates `web:${uuid}`, calls `initChat` then `connect`. Same as current logic. |
-| `showInsufficientCredits` dialog | Stays in ChatProvider. Store's error handler triggers it via a callback/subscription. |
+| `showInsufficientCredits` dialog | Per-chat `showInsufficientCredits` flag in `ChatState`. Set by `handleError` when `errorCode === 'INSUFFICIENT_CREDITS'`. ChatProvider reads from active chat state and passes through context. |
 | SSE connection lost mid-stream | Browser EventSource auto-reconnects. Fallback timer catches stale connections after 8s. |
+| SSE error + API error race | Per-chat `sseErrorHandled` flag prevents duplicate error messages. SSE error handler sets flag; `send()` catch checks flag before adding error message. |
+| Switch to chat that is streaming in background | `loadChat` finds chat already in store → instant display of current streaming progress. SSE connection continues dispatching to store. |
 
 ## Cleanup Strategy
 
