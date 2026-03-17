@@ -12,6 +12,7 @@ import {
 } from '../db/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { which } from '../utils/shell-env.ts'
+import { detectChromePath } from '../utils/chrome.ts'
 
 export function createBrowserProfilesRoutes() {
   const app = new Hono()
@@ -68,11 +69,12 @@ export function createBrowserProfilesRoutes() {
     await launchAndVerify(['--session', id, 'close'], 10_000).catch(() => {})
 
     // Launch headed browser with isolated session to avoid daemon params being ignored
-    log.info({ profileId: id, profileDir }, 'launching headed browser')
-    const result = await launchAndVerify(
-      ['--session', id, '--profile', profileDir, '--headed', 'open', 'about:blank'],
-      15_000,
-    )
+    const chromePath = detectChromePath()
+    const launchArgs = ['--session', id, '--profile', profileDir, '--headed']
+    if (chromePath) launchArgs.push('--executable-path', chromePath)
+    launchArgs.push('open', 'about:blank')
+    log.info({ profileId: id, profileDir, chromePath }, 'launching headed browser')
+    const result = await launchAndVerify(launchArgs, 15_000)
 
     if (result.ok) {
       log.info({ profileId: id }, 'browser launched successfully')
