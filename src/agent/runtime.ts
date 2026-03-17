@@ -648,7 +648,6 @@ export class AgentRuntime {
       if (resourcesDir) {
         const mingitCandidates = [
           resolve(resourcesDir, 'mingit', 'usr', 'bin', 'bash.exe'),
-          resolve(resourcesDir, '_up_', 'src-tauri', 'resources', 'mingit', 'usr', 'bin', 'bash.exe'),
         ]
         logger.info({ resourcesDir, mingitCandidates, category: 'agent' }, 'Checking bundled MinGit candidates')
         for (const candidate of mingitCandidates) {

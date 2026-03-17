@@ -92,10 +92,8 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
                 if res_str.starts_with("\\\\?\\") {
                     res_str = res_str[4..].to_string();
                 }
-                // Tauri 2 converts ../ to _up_/, so check both possible locations
                 let mingit_candidates = [
                     format!("{}\\mingit", res_str),
-                    format!("{}\\_up_\\src-tauri\\resources\\mingit", res_str),
                 ];
                 for mingit_dir in &mingit_candidates {
                     let bash_path = format!("{}\\usr\\bin\\bash.exe", mingit_dir);
