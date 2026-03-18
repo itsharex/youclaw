@@ -74,6 +74,7 @@ export function Skills() {
   })
   const [marketplaceStatus, setMarketplaceStatus] = useState<'idle' | 'loading' | 'loading-more' | 'error'>('idle')
   const [marketplaceError, setMarketplaceError] = useState('')
+  const [marketplaceAppendError, setMarketplaceAppendError] = useState('')
   const [marketplaceSort, setMarketplaceSort] = useState<MarketplaceSort>('trending')
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
@@ -89,6 +90,9 @@ export function Skills() {
   // Unified search state
   const [searchQuery, setSearchQuery] = useState('')
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const marketplaceScrollRef = useRef<HTMLDivElement | null>(null)
+  const marketplaceLoadMoreRef = useRef<HTMLDivElement | null>(null)
+  const marketplacePendingCursorRef = useRef<string | null>(null)
 
   const sourceLabels: Record<Skill['source'], string> = {
     workspace: t.skills.workspace,
@@ -110,6 +114,15 @@ export function Skills() {
       const sort = options?.sort ?? marketplaceSort
       const cursor = append ? (options?.cursor ?? marketplace.nextCursor) : null
 
+      if (append) {
+        if (!cursor || marketplacePendingCursorRef.current === cursor) return
+        marketplacePendingCursorRef.current = cursor
+        setMarketplaceAppendError('')
+      } else {
+        marketplacePendingCursorRef.current = null
+        setMarketplaceAppendError('')
+      }
+
       setMarketplaceStatus(append ? 'loading-more' : 'loading')
       setMarketplaceError('')
 
@@ -130,13 +143,21 @@ export function Skills() {
             items: append ? [...current.items, ...page.items] : page.items,
           }))
           setMarketplaceStatus('idle')
+          if (append) {
+            marketplacePendingCursorRef.current = null
+          }
         })
         .catch((error) => {
           if (!append) {
             setMarketplace((current) => ({ ...current, items: [], nextCursor: null }))
+            marketplacePendingCursorRef.current = null
+            setMarketplaceStatus('error')
+            setMarketplaceError(error instanceof Error ? error.message : t.skills.marketplaceLoadFailed)
+            return
           }
-          setMarketplaceStatus('error')
-          setMarketplaceError(error instanceof Error ? error.message : t.skills.marketplaceLoadFailed)
+          marketplacePendingCursorRef.current = null
+          setMarketplaceStatus('idle')
+          setMarketplaceAppendError(error instanceof Error ? error.message : t.skills.marketplaceLoadFailed)
         })
     },
     [marketplace.nextCursor, searchQuery, marketplaceSort, t.skills.marketplaceLoadFailed],
@@ -194,6 +215,34 @@ export function Skills() {
   )
   const hasMarketplaceItems = visibleMarketplaceItems.length > 0
   const canLoadMore = isSearching && Boolean(marketplace.nextCursor)
+  const canAutoLoadMore = canLoadMore && !marketplaceAppendError
+
+  const handleMarketplaceLoadMore = useCallback(() => {
+    if (!canAutoLoadMore || marketplaceStatus !== 'idle') return
+    loadMarketplace({ append: true })
+  }, [canAutoLoadMore, marketplaceStatus, loadMarketplace])
+
+  useEffect(() => {
+    const container = marketplaceScrollRef.current
+    const sentinel = marketplaceLoadMoreRef.current
+    if (!container || !sentinel || !canAutoLoadMore) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          handleMarketplaceLoadMore()
+        }
+      },
+      {
+        root: container,
+        threshold: 0,
+        rootMargin: '0px 0px 240px 0px',
+      },
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [canAutoLoadMore, handleMarketplaceLoadMore])
 
   return (
     <div className="flex h-full flex-col">
@@ -461,7 +510,7 @@ export function Skills() {
         </div>
       ) : (
         /* Marketplace tab */
-        <div className="flex-1 overflow-y-auto p-6">
+        <div ref={marketplaceScrollRef} className="flex-1 overflow-y-auto p-6">
           <div className="max-w-3xl mx-auto space-y-6">
             {/* Single search bar */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -545,16 +594,29 @@ export function Skills() {
             )}
 
             {canLoadMore && (
-              <div className="flex justify-center">
-                <Button
-                  data-testid="marketplace-load-more"
-                  variant="secondary"
-                  onClick={() => loadMarketplace({ append: true })}
-                  disabled={marketplaceStatus === 'loading-more'}
-                >
-                  {marketplaceStatus === 'loading-more' && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  {t.skills.marketplaceLoadMore}
-                </Button>
+              <div className="space-y-3">
+                <div ref={marketplaceLoadMoreRef} className="h-1" aria-hidden="true" />
+                {marketplaceStatus === 'loading-more' && (
+                  <div className="flex items-center justify-center gap-2 py-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>{t.common.loading}</span>
+                  </div>
+                )}
+                {marketplaceAppendError && (
+                  <div className="flex flex-col items-center gap-2 py-2 text-sm text-muted-foreground">
+                    <p>{marketplaceAppendError}</p>
+                    <Button
+                      data-testid="marketplace-load-more-retry"
+                      variant="secondary"
+                      onClick={() => {
+                        setMarketplaceAppendError('')
+                        loadMarketplace({ append: true })
+                      }}
+                    >
+                      {t.common.retry}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

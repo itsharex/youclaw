@@ -7,6 +7,7 @@ export const zh: Translations = {
     edit: '编辑',
     delete: '删除',
     loading: '加载中...',
+    retry: '重试',
     create: '创建',
     noData: '暂无数据',
   },

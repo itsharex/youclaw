@@ -5,6 +5,7 @@ export const en = {
     edit: 'Edit',
     delete: 'Delete',
     loading: 'Loading...',
+    retry: 'Retry',
     create: 'Create',
     noData: 'No data',
   },
