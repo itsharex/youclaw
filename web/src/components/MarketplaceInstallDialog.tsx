@@ -1,4 +1,5 @@
 import type { MarketplaceSkillDetail } from '../api/client'
+import { openExternal } from '../api/transport'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,19 +37,20 @@ export function MarketplaceInstallDialog({
         </AlertDialogHeader>
         {detail && (
           <div className="space-y-3 text-sm">
-            <div className="flex items-center gap-2 font-medium">
-              {detail.displayName}
-              {detail.ownerHandle && detail.slug && (
-                <a
-                  href={`https://clawhub.ai/${detail.ownerHandle}/${detail.slug}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-              )}
-            </div>
+            {detail.ownerHandle && detail.slug ? (
+              <button
+                type="button"
+                onClick={() => void openExternal(`https://clawhub.ai/${detail.ownerHandle}/${detail.slug}`)}
+                className="flex items-center gap-2 font-medium hover:text-primary"
+              >
+                <span>{detail.displayName}</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 font-medium">
+                {detail.displayName}
+              </div>
+            )}
             <div className="text-xs text-muted-foreground">{detail.summary}</div>
 
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
