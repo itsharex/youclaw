@@ -143,7 +143,6 @@ class SSEManager {
           status: 'done' as const,
         }))
         store.completeMessage(chatId, event.fullText ?? '', finalToolUse)
-        this.disconnect(chatId)
         break
       }
       case 'processing':

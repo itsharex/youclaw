@@ -99,17 +99,22 @@ export function useChatActions(agentId: string) {
 
   const loadChat = useCallback(async (chatId: string) => {
     const store = useChatStore.getState()
+    store.initChat(chatId)
     store.setActiveChatId(chatId)
 
-    // If chat already in store with messages, instant switch
     const existing = store.chats[chatId]
-    if (existing && existing.messages.length > 0) return
+    if (existing?.isProcessing && !sseManager.isConnected(chatId)) {
+      sseManager.connect(chatId)
+    }
 
-    // Otherwise fetch from backend
     const msgs = await getMessages(chatId)
-    if (msgs.length === 0) throw new Error('Chat not found or empty')
+    if (msgs.length === 0) {
+      if (!existing || existing.messages.length === 0) {
+        throw new Error('Chat not found or empty')
+      }
+      return
+    }
 
-    store.initChat(chatId)
     store.setMessages(
       chatId,
       msgs.map((m) => ({

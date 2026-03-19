@@ -145,8 +145,6 @@ export const useChatStore = create<ChatStore>((set) => ({
         ],
         streamingText: '',
         pendingToolUse: [],
-        isProcessing: false,
-        chatStatus: 'ready' as const,
       })),
     }))
     // Notify after state is committed
