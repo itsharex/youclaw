@@ -409,17 +409,6 @@ fn get_sidecar_status(app: AppHandle) -> SidecarEvent {
     }
 }
 
-#[tauri::command]
-async fn set_preferred_port(app: AppHandle, port: u16) -> Result<(), String> {
-    if port < 1024 {
-        return Err("Port must be between 1024 and 65535".into());
-    }
-    if let Ok(store) = app.store("settings.json") {
-        let _ = store.set("preferred_port", serde_json::Value::String(port.to_string()));
-        let _ = store.save();
-    }
-    Ok(())
-}
 
 #[tauri::command]
 async fn restart_sidecar(#[allow(unused)] app: AppHandle) -> Result<(), String> {
@@ -507,7 +496,6 @@ pub fn run() {
             get_version,
             get_platform,
             get_sidecar_status,
-            set_preferred_port,
             restart_sidecar,
         ])
         .setup(|app| {

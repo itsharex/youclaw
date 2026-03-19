@@ -41,6 +41,18 @@ export function updateCachedBaseUrl(url: string): void {
 }
 
 /**
+ * Persist preferred port to Tauri Store (JS instance only).
+ * Must not go through the Rust app.store() to avoid cache divergence.
+ */
+export async function savePreferredPort(port: number): Promise<void> {
+  if (port < 1024 || port > 65535) throw new Error('Port must be between 1024 and 65535')
+  const { load } = await import('@tauri-apps/plugin-store')
+  const store = await load('settings.json')
+  await store.set('preferred_port', String(port))
+  await store.save()
+}
+
+/**
  * Get backend baseUrl
  * - Tauri mode: read port from store, default 62601
  * - Web mode: empty string (uses Vite proxy)

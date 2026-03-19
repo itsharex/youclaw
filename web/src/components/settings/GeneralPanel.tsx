@@ -6,7 +6,7 @@ import { Sun, Moon, Monitor } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { isTauri, getTauriInvoke, updateCachedBaseUrl } from "@/api/transport"
+import { isTauri, updateCachedBaseUrl, savePreferredPort } from "@/api/transport"
 
 const themeOptions: { value: Theme; labelKey: "dark" | "light" | "system"; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { value: "light", labelKey: "light", icon: Sun },
@@ -44,8 +44,7 @@ export function GeneralPanel() {
   }, [])
 
   const savePortToStore = useCallback(async (port: number) => {
-    const invoke = getTauriInvoke()
-    await invoke('set_preferred_port', { port })
+    await savePreferredPort(port)
   }, [])
 
   const handleSavePort = useCallback(async () => {
