@@ -213,16 +213,24 @@ export function ensureBunRuntime(): string | null {
     ]
     for (const src of candidates) {
       if (existsSync(src)) {
-        mkdirSync(targetDir, { recursive: true })
-        copyFileSync(src, targetPath)
-        chmodSync(targetPath, 0o755)
-        // macOS: strip quarantine
-        if (process.platform === 'darwin') {
-          try { execSync(`xattr -d com.apple.quarantine "${targetPath}"`, { timeout: 5000 }) } catch {}
+        try {
+          mkdirSync(targetDir, { recursive: true })
+          copyFileSync(src, targetPath)
+          chmodSync(targetPath, 0o755)
+          // macOS: strip quarantine
+          if (process.platform === 'darwin') {
+            try { execSync(`xattr -d com.apple.quarantine "${targetPath}"`, { timeout: 5000 }) } catch {}
+          }
+          safeLog('info', 'Extracted embedded Bun runtime', { src, dst: targetPath })
+          _bunRuntimePath = targetPath
+          return targetPath
+        } catch (err) {
+          safeLog('warn', 'Failed to extract embedded Bun runtime candidate', {
+            src,
+            dst: targetPath,
+            error: err instanceof Error ? err.message : String(err),
+          })
         }
-        safeLog('info', 'Extracted embedded Bun runtime', { src, dst: targetPath })
-        _bunRuntimePath = targetPath
-        return targetPath
       }
     }
   }

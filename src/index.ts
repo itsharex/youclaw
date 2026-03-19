@@ -1,6 +1,9 @@
 // Remove CLAUDECODE env var to prevent Claude Agent SDK from detecting a nested session
 delete process.env.CLAUDECODE
 
+import { appendFileSync, mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
 import { loadEnv, getEnv } from './config/index.ts'
 import { initLogger, getLogger } from './logger/index.ts'
 import { initDatabase, createTask, updateTask, deleteTask, getTasks, getTask } from './db/index.ts'
@@ -40,8 +43,7 @@ async function main() {
       logger.info('Using system Bun runtime')
     }
   } catch (err) {
-    logger.error({ err }, '[STARTUP] Step 2b failed: ensure Bun runtime')
-    throw err
+    logger.warn({ err }, '[STARTUP] Step 2b failed: ensure Bun runtime, continuing without embedded runtime')
   }
 
   // 3. Initialize database
@@ -273,7 +275,23 @@ async function main() {
   process.on('SIGINT', shutdown)
 }
 
+function writeStartupCrashLog(errorText: string): void {
+  try {
+    const baseDir = process.env.DATA_DIR
+      ? resolve(process.env.DATA_DIR)
+      : resolve(tmpdir(), 'youclaw-data')
+    mkdirSync(baseDir, { recursive: true })
+    const logPath = resolve(baseDir, 'startup-crash.log')
+    const line = `[${new Date().toISOString()}] ${errorText}\n`
+    appendFileSync(logPath, line, 'utf-8')
+  } catch {
+    // best-effort only
+  }
+}
+
 main().catch((err) => {
-  console.error('[STARTUP] Fatal error:', err instanceof Error ? err.stack ?? err.message : String(err))
+  const errorText = err instanceof Error ? err.stack ?? err.message : String(err)
+  console.error('[STARTUP] Fatal error:', errorText)
+  writeStartupCrashLog(errorText)
   process.exit(1)
 })
