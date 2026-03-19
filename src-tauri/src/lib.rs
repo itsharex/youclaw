@@ -236,6 +236,14 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
                 env_vars.push(("HOME".into(), userprofile));
             }
         }
+        // Inject TEMP/TMP/BUN_TMPDIR so Bun uses the correct temp directory on Windows.
+        // Without these, Bun may fall back to an unexpected drive (e.g. B:\~BUN\root)
+        // which can cause port binding failures if that drive has restricted permissions.
+        if let Ok(temp) = std::env::var("TEMP") {
+            env_vars.push(("TEMP".into(), temp.clone()));
+            env_vars.push(("TMP".into(), temp.clone()));
+            env_vars.push(("BUN_TMPDIR".into(), temp));
+        }
     }
 
     // Set resource directory (read-only templates for agents/skills/prompts)

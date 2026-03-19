@@ -249,7 +249,12 @@ async function main() {
       idleTimeout: 255,       // Max idle timeout (seconds) for SSE/long-running requests
     })
   } catch (err) {
-    if (err instanceof Error && err.message.includes('address already in use')) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Bun may emit different messages depending on platform:
+    //   "Failed to start server. Is port X in use?" (Windows)
+    //   "address already in use" (Unix)
+    const isPortConflict = msg.includes('address already in use') || msg.includes('Failed to start server')
+    if (isPortConflict) {
       logger.error({ port: env.PORT }, `Port ${env.PORT} is already in use`)
       console.error(`[PORT_CONFLICT] Port ${env.PORT} is already in use`)
       process.exit(1)
@@ -291,7 +296,13 @@ function writeStartupCrashLog(errorText: string): void {
 
 main().catch((err) => {
   const errorText = err instanceof Error ? err.stack ?? err.message : String(err)
+  const context = [
+    `PORT=${process.env.PORT ?? '(unset)'}`,
+    `DATA_DIR=${process.env.DATA_DIR ?? '(unset)'}`,
+    `TEMP=${process.env.TEMP ?? '(unset)'}`,
+    `BUN_TMPDIR=${process.env.BUN_TMPDIR ?? '(unset)'}`,
+  ].join(' ')
   console.error('[STARTUP] Fatal error:', errorText)
-  writeStartupCrashLog(errorText)
+  writeStartupCrashLog(`[context: ${context}] ${errorText}`)
   process.exit(1)
 })
