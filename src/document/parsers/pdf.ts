@@ -1,6 +1,20 @@
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-import type { PDFPageProxy } from 'pdfjs-dist/types/src/display/api'
 import type { ParsedDocumentContent } from './types.ts'
+
+// pdfjs-dist references DOMMatrix at module load time (canvas rendering code).
+// Polyfill it before importing so the sidecar does not crash on startup.
+if (typeof globalThis.DOMMatrix === 'undefined') {
+  // @ts-ignore
+  globalThis.DOMMatrix = class DOMMatrix {
+    constructor(_init?: unknown) {}
+    invertSelf() { return this }
+    multiplySelf() { return this }
+    preMultiplySelf() { return this }
+    translate() { return this }
+    scale() { return this }
+  }
+}
+
+const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
 
 interface TextItemLike {
   str: string
@@ -26,7 +40,7 @@ function normalizePageText(text: string): string {
     .trim()
 }
 
-async function extractPageText(page: PDFPageProxy): Promise<string> {
+async function extractPageText(page: import('pdfjs-dist/types/src/display/api').PDFPageProxy): Promise<string> {
   const textContent = await page.getTextContent()
 
   let lastY: number | undefined
