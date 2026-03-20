@@ -40,6 +40,7 @@ export function useChatActions(agentId: string) {
       const store = useChatStore.getState()
       const currentChatId = store.activeChatId
       const effectiveChatId = currentChatId ?? `web:${crypto.randomUUID()}`
+      const messageId = crypto.randomUUID()
 
       // Initialize chat entry in store
       store.initChat(effectiveChatId)
@@ -50,7 +51,7 @@ export function useChatActions(agentId: string) {
 
       // Add user message
       store.addUserMessage(effectiveChatId, {
-        id: Date.now().toString(),
+        id: messageId,
         role: 'user',
         content: prompt,
         timestamp: new Date().toISOString(),
@@ -75,6 +76,7 @@ export function useChatActions(agentId: string) {
           effectiveChatId,
           browserProfileId,
           attachments,
+          messageId,
         )
       } catch (err) {
         // Check if SSE already handled error

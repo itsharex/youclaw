@@ -65,6 +65,25 @@ describe('messages routes', () => {
     expect(handleInbound.mock.calls[0]?.[0]?.requestedSkills).toEqual(['pdf'])
   })
 
+  test('POST /agents/:id/message preserves client messageId when provided', async () => {
+    const handleInbound = mock(() => Promise.resolve())
+    const app = createMessagesRoutes(
+      { getAgent: () => ({ id: 'agent-1' }) } as any,
+      {} as any,
+      { handleInbound } as any,
+    )
+
+    const res = await app.request('/agents/agent-1/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'hello', chatId: 'web:chat-1', messageId: 'client-msg-1' }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(handleInbound).toHaveBeenCalledTimes(1)
+    expect(handleInbound.mock.calls[0]?.[0]?.id).toBe('client-msg-1')
+  })
+
   test('GET /chats/:chatId/messages returns in chronological order', async () => {
     saveMessage({
       id: 'm1',

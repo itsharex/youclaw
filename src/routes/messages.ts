@@ -23,6 +23,7 @@ export function createMessagesRoutes(agentManager: AgentManager, agentQueue: Age
     const BodySchema = z.object({
       prompt: z.string(),
       chatId: z.string().optional(),
+      messageId: z.string().optional(),
       skills: z.array(z.string()).optional(),
       browserProfileId: z.string().optional(),
       attachments: z.array(AttachmentSchema).max(MAX_FILES).optional(),
@@ -44,9 +45,10 @@ export function createMessagesRoutes(agentManager: AgentManager, agentQueue: Age
     }
 
     const chatId = body.chatId ?? `web:${randomUUID()}`
+    const messageId = body.messageId ?? randomUUID()
 
     const inbound: InboundMessage = {
-      id: randomUUID(),
+      id: messageId,
       chatId,
       sender: 'user',
       senderName: 'User',

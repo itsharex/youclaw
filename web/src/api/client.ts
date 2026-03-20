@@ -20,10 +20,17 @@ export async function checkGit() {
 }
 
 // Send message to agent
-export async function sendMessage(agentId: string, prompt: string, chatId?: string, browserProfileId?: string, attachments?: Attachment[]) {
+export async function sendMessage(
+  agentId: string,
+  prompt: string,
+  chatId?: string,
+  browserProfileId?: string,
+  attachments?: Attachment[],
+  messageId?: string,
+) {
   return apiFetch<{ chatId: string; status: string }>(`/api/agents/${agentId}/message`, {
     method: 'POST',
-    body: JSON.stringify({ prompt, chatId, browserProfileId, attachments }),
+    body: JSON.stringify({ prompt, chatId, browserProfileId, attachments, messageId }),
   })
 }
 

@@ -86,6 +86,15 @@ export class MessageRouter {
     const db = getDatabase()
     const existingChat = db.query("SELECT 1 FROM chats WHERE chat_id = ?").get(message.chatId)
 
+    // Deduplicate: skip if this message already exists (non-web channels only, web uses fresh UUIDs)
+    if (channel !== 'web') {
+      const existing = db.query('SELECT 1 FROM messages WHERE id = ? AND chat_id = ?').get(message.id, message.chatId)
+      if (existing) {
+        logger.debug({ id: message.id, chatId: message.chatId, channel }, 'Duplicate message skipped')
+        return
+      }
+    }
+
     // Save to database
     upsertChat(message.chatId, config.id, chatTitle, channel)
     saveMessage({
