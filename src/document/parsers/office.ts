@@ -1,6 +1,18 @@
 import { readFileSync } from 'node:fs'
 import type { ParsedDocumentContent, ParsedChunkInput } from './types.ts'
 
+type OfficeBinaryInput = string | Buffer | Uint8Array
+
+function toBuffer(input: OfficeBinaryInput): Buffer {
+  if (typeof input === 'string') {
+    return readFileSync(input)
+  }
+  if (Buffer.isBuffer(input)) {
+    return input
+  }
+  return Buffer.from(input)
+}
+
 function normalizeText(text: string): string {
   return text
     .replace(/\r\n/g, '\n')
@@ -24,14 +36,15 @@ function stripHtml(html: string): string {
     .replace(/&nbsp;/g, ' ')
 }
 
-export async function extractDocxText(filePath: string): Promise<ParsedDocumentContent> {
+export async function extractDocxText(input: OfficeBinaryInput): Promise<ParsedDocumentContent> {
   const mammoth = await import('mammoth')
-  const rawResult = await mammoth.extractRawText({ path: filePath })
+  const buffer = toBuffer(input)
+  const rawResult = await mammoth.extractRawText({ buffer })
   let text = normalizeText(rawResult.value)
   let parser = 'mammoth-raw'
 
   if (!text) {
-    const htmlResult = await mammoth.convertToHtml({ path: filePath })
+    const htmlResult = await mammoth.convertToHtml({ buffer })
     text = normalizeText(stripHtml(htmlResult.value))
     parser = 'mammoth-html'
   }
@@ -43,9 +56,10 @@ export async function extractDocxText(filePath: string): Promise<ParsedDocumentC
   }
 }
 
-export async function extractXlsxText(filePath: string): Promise<ParsedDocumentContent> {
+export async function extractXlsxText(input: OfficeBinaryInput): Promise<ParsedDocumentContent> {
   const XLSX = await import('xlsx')
-  const workbook = XLSX.readFile(filePath)
+  const buffer = toBuffer(input)
+  const workbook = XLSX.read(buffer, { type: 'buffer' })
   const parts: string[] = []
   const chunks: ParsedChunkInput[] = []
 
@@ -75,9 +89,9 @@ export async function extractXlsxText(filePath: string): Promise<ParsedDocumentC
   }
 }
 
-export async function extractPptxText(filePath: string): Promise<ParsedDocumentContent> {
+export async function extractPptxText(input: OfficeBinaryInput): Promise<ParsedDocumentContent> {
   const { unzipSync } = await import('fflate')
-  const buffer = readFileSync(filePath)
+  const buffer = toBuffer(input)
   const zip = unzipSync(new Uint8Array(buffer))
 
   const slideEntries = Object.keys(zip)

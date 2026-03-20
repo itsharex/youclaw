@@ -300,15 +300,17 @@ export class DocumentService {
   }
 
   private async parseAttachment(sourceType: DocumentSourceType, filePath: string): Promise<ParsedDocumentContent> {
+    const buffer = readFileSync(filePath)
+
     switch (sourceType) {
       case 'pdf':
-        return extractPdfText(readFileSync(filePath))
+        return extractPdfText(buffer)
       case 'docx':
-        return extractDocxText(filePath)
+        return extractDocxText(buffer)
       case 'xlsx':
-        return extractXlsxText(filePath)
+        return extractXlsxText(buffer)
       case 'pptx':
-        return extractPptxText(filePath)
+        return extractPptxText(buffer)
     }
   }
 

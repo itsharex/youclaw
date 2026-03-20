@@ -4,6 +4,13 @@ import type { ParsedDocumentContent } from './types.ts'
 // Polyfill it before importing so the sidecar does not crash on startup.
 if (typeof (globalThis as Record<string, unknown>).DOMMatrix === 'undefined') {
   (globalThis as Record<string, unknown>).DOMMatrix = class DOMMatrix {
+    a = 1
+    b = 0
+    c = 0
+    d = 1
+    e = 0
+    f = 0
+
     constructor(_init?: unknown) {}
     invertSelf() { return this }
     multiplySelf() { return this }
@@ -13,7 +20,15 @@ if (typeof (globalThis as Record<string, unknown>).DOMMatrix === 'undefined') {
   }
 }
 
-const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+// In Bun compiled sidecars, pdfjs' default "./pdf.worker.mjs" resolution points
+// into $bunfs and fails. Preload the worker module and expose it on globalThis so
+// fake-worker setup can reuse it without relative path resolution.
+const [pdfjs, pdfjsWorker] = await Promise.all([
+  import('pdfjs-dist/legacy/build/pdf.mjs'),
+  import('pdfjs-dist/legacy/build/pdf.worker.mjs'),
+])
+
+;(globalThis as Record<string, unknown>).pdfjsWorker = pdfjsWorker
 
 interface TextItemLike {
   str: string
