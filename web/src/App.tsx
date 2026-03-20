@@ -145,9 +145,11 @@ export default function App() {
         return
       }
 
-      const route = `${url.hostname}${url.pathname}`
+      const rawRoute = `${url.hostname}${url.pathname}`
+      const route = rawRoute.replace(/^\/+/, '')
       const token = url.searchParams.get('token')
       logDeepLink('received', {
+        rawRoute,
         route,
         hasToken: !!token,
         tokenPreview: maskToken(token),
