@@ -35,6 +35,7 @@ export interface ChatContextType {
   refreshAgents: () => void
 
   browserProfiles: BrowserProfileDTO[]
+  refreshBrowserProfiles: () => void
   selectedProfileId: string | null
   setSelectedProfileId: (id: string | null) => void
 }

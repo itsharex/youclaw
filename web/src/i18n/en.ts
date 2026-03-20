@@ -1,6 +1,7 @@
 export const en = {
   common: {
     save: 'Save',
+    confirm: 'Confirm',
     cancel: 'Cancel',
     edit: 'Edit',
     delete: 'Delete',
@@ -8,6 +9,13 @@ export const en = {
     retry: 'Retry',
     create: 'Create',
     noData: 'No data',
+  },
+  closeDialog: {
+    title: 'Close You Claw',
+    description: 'Choose what should happen when you close the window.',
+    minimize: 'Minimize to Tray',
+    quit: 'Quit',
+    remember: 'Remember my choice',
   },
   nav: {
     chat: 'Chat',
@@ -336,6 +344,20 @@ export const en = {
     portConflictHint: 'The configured port is already in use by another application. Please change it.',
     portConflictAction: 'Change Port',
     portWebHint: 'Saved. Please restart the backend service manually to apply.',
+    closeBehavior: 'Close Behavior',
+    closeBehaviorHint: 'Choose whether closing the desktop window should ask, minimize to tray, or quit immediately.',
+    closeBehaviorAsk: 'Ask every time',
+    closeBehaviorAskDesc: 'Show the close confirmation dialog whenever you close the window.',
+    closeBehaviorMinimize: 'Minimize to tray',
+    closeBehaviorMinimizeDesc: 'Hide the window to the system tray when the close button is pressed.',
+    closeBehaviorQuit: 'Quit',
+    closeBehaviorQuitDesc: 'Exit the app immediately when the close button is pressed.',
+  },
+  startupError: {
+    title: 'Startup Failed',
+    description: 'The backend service failed to start. Please try again or contact us for help.',
+    retrying: 'Retrying...',
+    contactHint: 'Still having trouble? Reach out to us:',
   },
   gitSetup: {
     title: 'Git is Required',

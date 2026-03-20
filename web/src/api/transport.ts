@@ -25,17 +25,6 @@ export function getTauriInvoke(): (cmd: string, args?: Record<string, unknown>) 
 // Cache backend baseUrl to avoid repeated store reads
 let _cachedBaseUrl: string | null = null
 
-// Port conflict status
-let _portConflict: string | null = null
-
-export function getPortConflict(): string | null {
-  return _portConflict
-}
-
-export function clearPortConflict(): void {
-  _portConflict = null
-}
-
 export function updateCachedBaseUrl(url: string): void {
   _cachedBaseUrl = url
 }
@@ -95,54 +84,24 @@ export async function openExternal(url: string): Promise<void> {
   }
 }
 
-/** Handle sidecar status payload and update caches */
-function handleSidecarStatus(payload: { status: string; message: string }): boolean {
-  if (payload.status === 'ready') {
-    const match = payload.message.match(/port\s+(\d+)/)
-    if (match) {
-      _cachedBaseUrl = `http://localhost:${match[1]}`
-    }
-    return true
-  } else if (payload.status === 'port-conflict') {
-    _portConflict = payload.message
-    return true
-  } else if (payload.status === 'error') {
-    return true
-  }
-  return false // still pending
-}
-
-/** Called once at app startup, waits for sidecar ready event before rendering */
-export async function initBaseUrl(): Promise<void> {
-  if (!isTauri) return
+/** Called once at app startup, polls backend health until ready before rendering */
+export async function initBaseUrl(): Promise<boolean> {
+  if (!isTauri) return true
 
   // Quick-read port from store first
   await getBackendBaseUrl()
 
-  try {
-    const invoke = getTauriInvoke()
-
-    // Check if sidecar is already ready (eliminates race condition with event)
-    const status = await invoke('get_sidecar_status') as { status: string; message: string }
-    if (handleSidecarStatus(status)) return
-
-    // Not ready yet — listen for event
-    const { listen } = await import('@tauri-apps/api/event')
-    await new Promise<void>((resolve) => {
-      const unlisten = listen<{ status: string; message: string }>('sidecar-event', (event) => {
-        if (handleSidecarStatus(event.payload)) {
-          unlisten.then(fn => fn())
-          resolve()
-        }
-      })
-
-      // Hard fallback timeout in case something goes very wrong
-      setTimeout(() => {
-        unlisten.then(fn => fn())
-        resolve()
-      }, 30000)
-    })
-  } catch {
-    // Invoke/listener failure doesn't block startup
+  // Poll backend health endpoint directly — no Rust IPC middleman
+  const maxWait = 30000
+  const interval = 300
+  for (let elapsed = 0; elapsed < maxWait; elapsed += interval) {
+    try {
+      const res = await fetch(`${_cachedBaseUrl}/api/health`, { signal: AbortSignal.timeout(500) })
+      if (res.ok) return true
+    } catch {
+      // Not ready yet
+    }
+    await new Promise(r => setTimeout(r, interval))
   }
+  return false
 }

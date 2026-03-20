@@ -46,7 +46,7 @@ export function Channels() {
     <div className="flex h-full">
       {/* Left: Channel list */}
       <SidePanel>
-        <div className="h-12 shrink-0 px-3 border-b border-border flex items-center justify-between" {...drag}>
+        <div className="h-9 shrink-0 px-3 border-b border-border flex items-center justify-between" {...drag}>
           <h2 className="font-semibold text-sm">{t.channels.title}</h2>
           <div className="flex items-center gap-1">
             <button

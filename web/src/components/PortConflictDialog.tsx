@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useI18n } from "@/i18n"
-import { getTauriInvoke, updateCachedBaseUrl, clearPortConflict, savePreferredPort } from "@/api/transport"
+import { getTauriInvoke, updateCachedBaseUrl, savePreferredPort } from "@/api/transport"
 
 interface PortConflictDialogProps {
   open: boolean
@@ -37,7 +37,6 @@ export function PortConflictDialog({ open, onResolved }: PortConflictDialogProps
       await savePreferredPort(portNum)
       await invoke('restart_sidecar')
       updateCachedBaseUrl(`http://localhost:${portNum}`)
-      clearPortConflict()
       onResolved()
     } catch (err) {
       setError(String(err))

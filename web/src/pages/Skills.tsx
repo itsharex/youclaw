@@ -247,13 +247,13 @@ export function Skills() {
   return (
     <div className="flex h-full flex-col">
       {/* Tab switcher */}
-      <div className="px-4 py-3 border-b border-border">
-        <div className="inline-flex items-center gap-1 rounded-xl bg-muted/60 p-1">
+      <div className="px-4 py-2 border-b border-border">
+        <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5">
           <button
             data-testid="skills-installed-tab"
             onClick={() => setTab('installed')}
             className={cn(
-              'px-4 py-1.5 text-sm font-medium rounded-lg transition-all',
+              'px-3 py-1 text-[13px] font-semibold rounded-md transition-all',
               tab === 'installed'
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
@@ -265,13 +265,13 @@ export function Skills() {
             data-testid="skills-marketplace-tab"
             onClick={() => setTab('marketplace')}
             className={cn(
-              'px-4 py-1.5 text-sm font-medium rounded-lg transition-all flex items-center gap-1.5',
+              'px-3 py-1 text-[13px] font-semibold rounded-md transition-all flex items-center gap-1',
               tab === 'marketplace'
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             )}
           >
-            <Store className="h-3.5 w-3.5" />
+            <Store className="h-3 w-3" />
             {t.skills.marketplace}
           </button>
         </div>
@@ -282,7 +282,7 @@ export function Skills() {
         <div className="flex flex-1 min-h-0">
           {/* Left panel: skill list */}
           <SidePanel>
-            <div className="h-12 shrink-0 px-3 border-b border-border flex items-center" {...drag}>
+            <div className="h-9 shrink-0 px-3 border-b border-border flex items-center" {...drag}>
               <h2 className="font-semibold text-sm">{t.skills.title}</h2>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-3">
